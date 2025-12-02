@@ -136,6 +136,64 @@ const (
 //	fmt.Println(parsed.Validate()) // Output: <nil> (valid)
 type Body string
 
+// ParseBody parses a string into a Body value, normalizing and validating the
+// input before returning. This function provides a unified parsing entry point
+// for converting external string representations into Body values with
+// comprehensive input normalization and validation.
+//
+// ParseBody applies multi-stage normalization to the input. First, line endings
+// are normalized by replacing all CRLF sequences with LF and removing any
+// remaining lone CR characters, ensuring consistent Unix-style line endings.
+// Second, leading and trailing blank lines are removed while preserving internal
+// blank lines that separate paragraphs or provide visual structure. Third, the
+// result is validated against all Body constraints.
+//
+// After normalization, ParseBody validates the result against all Body
+// constraints. The normalized string MUST NOT exceed BodyMaxBytes bytes in
+// UTF-8 encoding and MUST NOT contain more than BodyMaxLines lines. The
+// normalized string MUST NOT contain any raw CR characters. If any constraint
+// is violated, ParseBody returns an error describing the specific validation
+// failure.
+//
+// ParseBody returns an error in the following cases: if the normalized result
+// exceeds BodyMaxBytes, if the normalized result has too many lines, or if
+// normalization somehow failed to remove all CR characters (indicating a bug).
+// The error message includes relevant metrics to aid debugging and provide
+// clear feedback to users.
+//
+// The empty string is a valid input and parses successfully to the zero value
+// Body, representing "no body present". Strings containing only whitespace
+// (spaces, tabs, newlines) also parse to the zero value Body after normalization
+// removes blank lines.
+//
+// Callers MUST check the returned error before using the Body value. This
+// function is pure and has no side effects. It is safe to call concurrently
+// from multiple goroutines.
+//
+// Example:
+//
+//	body, err := conventional.ParseBody("\r\nLine 1\r\nLine 2\r\n\r\n")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println(body.String()) // Output: "Line 1\nLine 2" (normalized)
+func ParseBody(s string) (Body, error) {
+	// Normalize line endings: CRLF -> LF, remove lone CR
+	normalized := strings.ReplaceAll(s, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "")
+
+	// Trim leading and trailing blank lines
+	normalized = trimBlankLines(normalized)
+
+	// Create body and validate
+	body := Body(normalized)
+	if err := body.Validate(); err != nil {
+		return "", fmt.Errorf("invalid body: %w", err)
+	}
+
+	return body, nil
+}
+
 // String returns the string representation of the Body, which is the body text
 // itself without any additional formatting or decoration. This method satisfies
 // the model.Loggable interface's String requirement, providing a human-readable
@@ -439,64 +497,6 @@ func (b *Body) UnmarshalYAML(node *yaml.Node) error {
 
 	*b = parsed
 	return b.Validate()
-}
-
-// ParseBody parses a string into a Body value, normalizing and validating the
-// input before returning. This function provides a unified parsing entry point
-// for converting external string representations into Body values with
-// comprehensive input normalization and validation.
-//
-// ParseBody applies multi-stage normalization to the input. First, line endings
-// are normalized by replacing all CRLF sequences with LF and removing any
-// remaining lone CR characters, ensuring consistent Unix-style line endings.
-// Second, leading and trailing blank lines are removed while preserving internal
-// blank lines that separate paragraphs or provide visual structure. Third, the
-// result is validated against all Body constraints.
-//
-// After normalization, ParseBody validates the result against all Body
-// constraints. The normalized string MUST NOT exceed BodyMaxBytes bytes in
-// UTF-8 encoding and MUST NOT contain more than BodyMaxLines lines. The
-// normalized string MUST NOT contain any raw CR characters. If any constraint
-// is violated, ParseBody returns an error describing the specific validation
-// failure.
-//
-// ParseBody returns an error in the following cases: if the normalized result
-// exceeds BodyMaxBytes, if the normalized result has too many lines, or if
-// normalization somehow failed to remove all CR characters (indicating a bug).
-// The error message includes relevant metrics to aid debugging and provide
-// clear feedback to users.
-//
-// The empty string is a valid input and parses successfully to the zero value
-// Body, representing "no body present". Strings containing only whitespace
-// (spaces, tabs, newlines) also parse to the zero value Body after normalization
-// removes blank lines.
-//
-// Callers MUST check the returned error before using the Body value. This
-// function is pure and has no side effects. It is safe to call concurrently
-// from multiple goroutines.
-//
-// Example:
-//
-//	body, err := conventional.ParseBody("\r\nLine 1\r\nLine 2\r\n\r\n")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	fmt.Println(body.String()) // Output: "Line 1\nLine 2" (normalized)
-func ParseBody(s string) (Body, error) {
-	// Normalize line endings: CRLF -> LF, remove lone CR
-	normalized := strings.ReplaceAll(s, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "")
-
-	// Trim leading and trailing blank lines
-	normalized = trimBlankLines(normalized)
-
-	// Create body and validate
-	body := Body(normalized)
-	if err := body.Validate(); err != nil {
-		return "", fmt.Errorf("invalid body: %w", err)
-	}
-
-	return body, nil
 }
 
 // trimBlankLines removes leading and trailing blank lines from a string while
