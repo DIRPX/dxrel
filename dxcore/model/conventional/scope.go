@@ -154,6 +154,60 @@ var (
 //	fmt.Println(parsed.Validate()) // Output: <nil> (valid)
 type Scope string
 
+// ParseScope parses a string into a Scope value, normalizing and validating
+// the input before returning. This function provides a unified parsing entry
+// point for converting external string representations into Scope values with
+// comprehensive input validation and normalization.
+//
+// ParseScope applies a two-stage normalization process to the input. First,
+// leading and trailing whitespace is removed using strings.TrimSpace. Second,
+// the trimmed result is converted to lowercase using strings.ToLower. This
+// normalization ensures that inputs like "  API  ", "Api", and "api" all parse
+// to the same Scope value, and that scopes are stored consistently in lowercase
+// form regardless of how they were originally provided.
+//
+// After normalization, ParseScope validates the result against all Scope
+// constraints. The normalized string MUST be between ScopeMinLen and ScopeMaxLen
+// code points in length (or empty, which is valid), MUST match the pattern
+// defined by ScopeRegexp, and MUST NOT contain any whitespace characters. If
+// any constraint is violated, ParseScope returns an error describing the
+// specific validation failure.
+//
+// ParseScope returns an error in the following cases: if the normalized result
+// is longer than ScopeMaxLen, if the normalized result contains characters not
+// allowed by ScopeRegexp, or if the normalized result contains whitespace
+// characters. The error message includes the original invalid input (before
+// normalization) to aid debugging and provide clear feedback to users about
+// what they provided.
+//
+// The empty string is a valid input and parses successfully to the zero value
+// Scope, representing the absence of a scope. Strings containing only whitespace
+// also parse to the zero value Scope after normalization removes the whitespace.
+//
+// Callers MUST check the returned error before using the Scope value. This
+// function is pure and has no side effects. It is safe to call concurrently
+// from multiple goroutines.
+//
+// Example:
+//
+//	scope, err := conventional.ParseScope("  Core/IO  ")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println(scope.String()) // Output: "core/io"
+func ParseScope(s string) (Scope, error) {
+	// Normalize input: trim whitespace and convert to lowercase
+	normalized := strings.ToLower(strings.TrimSpace(s))
+
+	// Create scope and validate
+	scope := Scope(normalized)
+	if err := scope.Validate(); err != nil {
+		return "", fmt.Errorf("invalid scope %q: %w", s, err)
+	}
+
+	return scope, nil
+}
+
 // String returns the string representation of the Scope, which is simply the
 // scope identifier itself without any additional formatting or decoration.
 // This method satisfies the model.Loggable interface's String requirement,
@@ -448,60 +502,6 @@ func (s *Scope) UnmarshalYAML(node *yaml.Node) error {
 
 	*s = parsed
 	return s.Validate()
-}
-
-// ParseScope parses a string into a Scope value, normalizing and validating
-// the input before returning. This function provides a unified parsing entry
-// point for converting external string representations into Scope values with
-// comprehensive input validation and normalization.
-//
-// ParseScope applies a two-stage normalization process to the input. First,
-// leading and trailing whitespace is removed using strings.TrimSpace. Second,
-// the trimmed result is converted to lowercase using strings.ToLower. This
-// normalization ensures that inputs like "  API  ", "Api", and "api" all parse
-// to the same Scope value, and that scopes are stored consistently in lowercase
-// form regardless of how they were originally provided.
-//
-// After normalization, ParseScope validates the result against all Scope
-// constraints. The normalized string MUST be between ScopeMinLen and ScopeMaxLen
-// code points in length (or empty, which is valid), MUST match the pattern
-// defined by ScopeRegexp, and MUST NOT contain any whitespace characters. If
-// any constraint is violated, ParseScope returns an error describing the
-// specific validation failure.
-//
-// ParseScope returns an error in the following cases: if the normalized result
-// is longer than ScopeMaxLen, if the normalized result contains characters not
-// allowed by ScopeRegexp, or if the normalized result contains whitespace
-// characters. The error message includes the original invalid input (before
-// normalization) to aid debugging and provide clear feedback to users about
-// what they provided.
-//
-// The empty string is a valid input and parses successfully to the zero value
-// Scope, representing the absence of a scope. Strings containing only whitespace
-// also parse to the zero value Scope after normalization removes the whitespace.
-//
-// Callers MUST check the returned error before using the Scope value. This
-// function is pure and has no side effects. It is safe to call concurrently
-// from multiple goroutines.
-//
-// Example:
-//
-//	scope, err := conventional.ParseScope("  Core/IO  ")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	fmt.Println(scope.String()) // Output: "core/io"
-func ParseScope(s string) (Scope, error) {
-	// Normalize input: trim whitespace and convert to lowercase
-	normalized := strings.ToLower(strings.TrimSpace(s))
-
-	// Create scope and validate
-	scope := Scope(normalized)
-	if err := scope.Validate(); err != nil {
-		return "", fmt.Errorf("invalid scope %q: %w", s, err)
-	}
-
-	return scope, nil
 }
 
 // Compile-time verification that Scope implements model.Model interface.
