@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// trailerKeyFmt defines the canonical regular expression pattern used to
+	// trailerKeyPattern defines the canonical regular expression pattern used to
 	// validate trailer key identifiers in dxrel. This pattern enforces git
 	// interpret-trailers conventions ensuring keys are valid token identifiers
 	// suitable for metadata attribution, sign-offs, issue references, and other
@@ -50,7 +50,7 @@ const (
 	// through trimming of leading and trailing whitespace. Parsing functions
 	// MUST apply normalization before validation against this pattern to ensure
 	// consistent behavior regardless of input formatting variations.
-	trailerKeyFmt = `^[A-Za-z][A-Za-z0-9-]*$`
+	trailerKeyPattern = `^[A-Za-z][A-Za-z0-9-]*$`
 )
 
 const (
@@ -96,7 +96,7 @@ const (
 var (
 	// TrailerKeyRegexp is the compiled regular expression used to validate
 	// trailer key identifiers against the canonical format defined by
-	// trailerKeyFmt. This compiled regexp is safe for concurrent use by multiple
+	// trailerKeyPattern. This compiled regexp is safe for concurrent use by multiple
 	// goroutines and SHOULD be treated as a read-only, process-wide singleton.
 	//
 	// The regexp enforces that keys are ASCII alphanumeric identifiers optionally
@@ -104,7 +104,7 @@ var (
 	// higher-level functions such as ParseTrailer or Trailer.Validate rather
 	// than matching against this regexp directly, as those functions handle
 	// input normalization, length validation, and provide better error messages.
-	TrailerKeyRegexp = regexp.MustCompile(trailerKeyFmt)
+	TrailerKeyRegexp = regexp.MustCompile(trailerKeyPattern)
 )
 
 // Trailer represents a single structured trailer (footer) line at the end

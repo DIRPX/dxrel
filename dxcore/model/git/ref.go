@@ -491,6 +491,31 @@ const (
 	RefKindHash
 )
 
+const (
+	// RefKindUnknownStr is the string representation of RefKindUnknown.
+	RefKindUnknownStr = "unknown"
+
+	// RefKindBranchStr is the string representation of RefKindBranch.
+	RefKindBranchStr = "branch"
+
+	// RefKindRemoteBranchStr is the canonical string representation of
+	// RefKindRemoteBranch.
+	//
+	// Alternative formats "remote_branch" and "remotebranch" are also
+	// accepted during parsing for compatibility, but this canonical form
+	// with hyphen is used for serialization.
+	RefKindRemoteBranchStr = "remote-branch"
+
+	// RefKindTagStr is the string representation of RefKindTag.
+	RefKindTagStr = "tag"
+
+	// RefKindHeadStr is the string representation of RefKindHead.
+	RefKindHeadStr = "head"
+
+	// RefKindHashStr is the string representation of RefKindHash.
+	RefKindHashStr = "hash"
+)
+
 // ParseRefKind parses a string into a validated RefKind value.
 //
 // ParseRefKind applies normalization and validation to the input string.
@@ -522,20 +547,21 @@ func ParseRefKind(s string) (RefKind, error) {
 	normalized := strings.ToLower(strings.TrimSpace(s))
 
 	switch normalized {
-	case "unknown":
+	case RefKindUnknownStr:
 		return RefKindUnknown, nil
-	case "branch":
+	case RefKindBranchStr:
 		return RefKindBranch, nil
-	case "remote-branch", "remote_branch", "remotebranch":
+	case RefKindRemoteBranchStr, "remote_branch", "remotebranch":
 		return RefKindRemoteBranch, nil
-	case "tag":
+	case RefKindTagStr:
 		return RefKindTag, nil
-	case "head":
+	case RefKindHeadStr:
 		return RefKindHead, nil
-	case "hash":
+	case RefKindHashStr:
 		return RefKindHash, nil
 	default:
-		return RefKindUnknown, fmt.Errorf("unknown RefKind name %q (valid: unknown, branch, remote-branch, tag, head, hash)", s)
+		return RefKindUnknown, fmt.Errorf("unknown RefKind name %q (valid: %s, %s, %s, %s, %s, %s)", s,
+			RefKindUnknownStr, RefKindBranchStr, RefKindRemoteBranchStr, RefKindTagStr, RefKindHeadStr, RefKindHashStr)
 	}
 }
 
@@ -559,17 +585,17 @@ var _ model.Model = (*RefKind)(nil)
 func (rk RefKind) String() string {
 	switch rk {
 	case RefKindUnknown:
-		return "unknown"
+		return RefKindUnknownStr
 	case RefKindBranch:
-		return "branch"
+		return RefKindBranchStr
 	case RefKindRemoteBranch:
-		return "remote-branch"
+		return RefKindRemoteBranchStr
 	case RefKindTag:
-		return "tag"
+		return RefKindTagStr
 	case RefKindHead:
-		return "head"
+		return RefKindHeadStr
 	case RefKindHash:
-		return "hash"
+		return RefKindHashStr
 	default:
 		return fmt.Sprintf("RefKind(%d)", uint8(rk))
 	}

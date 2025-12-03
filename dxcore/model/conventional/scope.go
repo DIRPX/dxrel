@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// scopeFmt defines the canonical regular expression pattern used to validate
+	// scopePattern defines the canonical regular expression pattern used to validate
 	// Conventional Commit scope identifiers in dxrel. This pattern enforces a
 	// strict format that ensures scopes are machine-friendly identifiers suitable
 	// for automated tooling, changelog generation, and semantic versioning systems.
@@ -51,7 +51,7 @@ const (
 	// lowercase. Parsing functions MUST apply normalization before validation
 	// against this pattern to ensure consistent behavior regardless of input
 	// formatting variations.
-	scopeFmt = `^[a-z0-9]([a-z0-9._/-]*[a-z0-9])?$`
+	scopePattern = `^[a-z0-9]([a-z0-9._/-]*[a-z0-9])?$`
 )
 
 const (
@@ -88,7 +88,7 @@ const (
 
 var (
 	// ScopeRegexp is the compiled regular expression used to validate Conventional
-	// Commit scope identifiers against the canonical format defined by scopeFmt.
+	// Commit scope identifiers against the canonical format defined by scopePattern.
 	// This compiled regexp is safe for concurrent use by multiple goroutines and
 	// SHOULD be treated as a read-only, process-wide singleton.
 	//
@@ -103,7 +103,7 @@ var (
 	// throughout the program's execution. Direct use of this regexp is appropriate
 	// in test code for asserting format compliance or in low-level parsing logic
 	// where the caller has already performed normalization.
-	ScopeRegexp = regexp.MustCompile(scopeFmt)
+	ScopeRegexp = regexp.MustCompile(scopePattern)
 )
 
 // Scope represents the optional component or subsystem identifier in a
