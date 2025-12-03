@@ -123,6 +123,58 @@ var (
 //	fmt.Println(parsed.Validate()) // Output: <nil> (normalized to lowercase)
 type Hash string
 
+// ParseHash parses a string into a Hash value, normalizing and validating the
+// input before returning. This function provides a unified parsing entry point
+// for converting external string representations into Hash values with
+// comprehensive input normalization and validation.
+//
+// ParseHash applies multi-stage normalization to the input. First, leading
+// and trailing whitespace is removed via strings.TrimSpace. Second, uppercase
+// letters are converted to lowercase via strings.ToLower, ensuring consistent
+// canonical representation (Git treats object ids as case-insensitive, but
+// dxrel enforces lowercase for consistency). Third, the result is validated
+// against all Hash constraints.
+//
+// After normalization, ParseHash validates the result against all Hash
+// constraints. The normalized string MUST be either empty (zero value) or
+// exactly 40 characters (SHA-1) or exactly 64 characters (SHA-256) of lowercase
+// hexadecimal digits [0-9a-f]. If any constraint is violated, ParseHash returns
+// an error describing the specific validation failure.
+//
+// ParseHash returns an error in the following cases: if the normalized result
+// has incorrect length (not 40 or 64 characters), if the normalized result
+// contains non-hexadecimal characters, or if normalization produced an invalid
+// hash. The error message includes relevant metrics to aid debugging and provide
+// clear feedback to users.
+//
+// The empty string is a valid input and parses successfully to the zero value
+// Hash, representing "no hash attached". Strings containing only whitespace
+// also parse to the zero value Hash after trimming.
+//
+// Callers MUST check the returned error before using the Hash value. This
+// function is pure and has no side effects. It is safe to call concurrently
+// from multiple goroutines.
+//
+// Example:
+//
+//	hash, err := git.ParseHash("A1B2C3D4E5F6789012345678901234567890ABCD")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println(hash.String()) // Output: "a1b2c3d4e5f6789012345678901234567890abcd"
+func ParseHash(s string) (Hash, error) {
+	// Normalize: trim whitespace and convert to lowercase
+	normalized := strings.ToLower(strings.TrimSpace(s))
+
+	// Create hash and validate
+	hash := Hash(normalized)
+	if err := hash.Validate(); err != nil {
+		return "", fmt.Errorf("invalid hash: %w", err)
+	}
+
+	return hash, nil
+}
+
 // String returns the string representation of the Hash, which is the full
 // hexadecimal object id in lowercase form. This method satisfies the
 // model.Loggable interface's String requirement, providing a human-readable
@@ -541,58 +593,6 @@ func (h *Hash) UnmarshalYAML(node *yaml.Node) error {
 
 	*h = parsed
 	return nil
-}
-
-// ParseHash parses a string into a Hash value, normalizing and validating the
-// input before returning. This function provides a unified parsing entry point
-// for converting external string representations into Hash values with
-// comprehensive input normalization and validation.
-//
-// ParseHash applies multi-stage normalization to the input. First, leading
-// and trailing whitespace is removed via strings.TrimSpace. Second, uppercase
-// letters are converted to lowercase via strings.ToLower, ensuring consistent
-// canonical representation (Git treats object ids as case-insensitive, but
-// dxrel enforces lowercase for consistency). Third, the result is validated
-// against all Hash constraints.
-//
-// After normalization, ParseHash validates the result against all Hash
-// constraints. The normalized string MUST be either empty (zero value) or
-// exactly 40 characters (SHA-1) or exactly 64 characters (SHA-256) of lowercase
-// hexadecimal digits [0-9a-f]. If any constraint is violated, ParseHash returns
-// an error describing the specific validation failure.
-//
-// ParseHash returns an error in the following cases: if the normalized result
-// has incorrect length (not 40 or 64 characters), if the normalized result
-// contains non-hexadecimal characters, or if normalization produced an invalid
-// hash. The error message includes relevant metrics to aid debugging and provide
-// clear feedback to users.
-//
-// The empty string is a valid input and parses successfully to the zero value
-// Hash, representing "no hash attached". Strings containing only whitespace
-// also parse to the zero value Hash after trimming.
-//
-// Callers MUST check the returned error before using the Hash value. This
-// function is pure and has no side effects. It is safe to call concurrently
-// from multiple goroutines.
-//
-// Example:
-//
-//	hash, err := git.ParseHash("A1B2C3D4E5F6789012345678901234567890ABCD")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	fmt.Println(hash.String()) // Output: "a1b2c3d4e5f6789012345678901234567890abcd"
-func ParseHash(s string) (Hash, error) {
-	// Normalize: trim whitespace and convert to lowercase
-	normalized := strings.ToLower(strings.TrimSpace(s))
-
-	// Create hash and validate
-	hash := Hash(normalized)
-	if err := hash.Validate(); err != nil {
-		return "", fmt.Errorf("invalid hash: %w", err)
-	}
-
-	return hash, nil
 }
 
 // Compile-time verification that Hash implements model.Model interface.
