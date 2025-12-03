@@ -82,6 +82,32 @@ func TestDescription_IsZero(t *testing.T) {
 	}
 }
 
+func TestDescription_Equal(t *testing.T) {
+	tests := []struct {
+		name string
+		d1   conventional.Description
+		d2   conventional.Description
+		want bool
+	}{
+		{"both empty", conventional.Description(""), conventional.Description(""), true},
+		{"same lowercase", conventional.Description("add feature"), conventional.Description("add feature"), true},
+		{"same with capitals", conventional.Description("Add Feature"), conventional.Description("Add Feature"), true},
+		{"same with emoji", conventional.Description("add 🚀"), conventional.Description("add 🚀"), true},
+		{"different content", conventional.Description("add feature"), conventional.Description("fix bug"), false},
+		{"different case", conventional.Description("add feature"), conventional.Description("Add Feature"), false},
+		{"empty vs non-empty", conventional.Description(""), conventional.Description("add feature"), false},
+		{"different emoji", conventional.Description("add 🚀"), conventional.Description("add ✨"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.d1.Equal(tt.d2); got != tt.want {
+				t.Errorf("Description.Equal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDescription_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

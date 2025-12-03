@@ -287,6 +287,42 @@ func (b Body) IsZero() bool {
 	return b == ""
 }
 
+// Equal reports whether this Body is equal to another Body value, providing
+// an explicit equality comparison method that follows common Go idioms for
+// string-based value types. While Body values can be compared using the ==
+// operator directly, this method offers a named alternative that improves code
+// readability and maintains consistency with other model types in the dxrel
+// codebase.
+//
+// Equal performs a simple string comparison and returns true if both Body
+// values contain identical character sequences including all line breaks,
+// whitespace, and formatting. The comparison is exact and considers each
+// Unicode code point in the normalized representation with LF line endings.
+// Empty bodies (zero values) are equal to other empty bodies, and normalized
+// bodies are equal only to identically normalized bodies with matching content
+// and structure.
+//
+// This method is particularly useful in table-driven tests, assertion libraries,
+// commit message comparison, deduplication operations, and validation scenarios
+// where a method-based approach is more idiomatic than operator-based comparison.
+// It also provides a consistent interface across all model types, some of which
+// MAY require more complex equality semantics than simple string comparison.
+//
+// This method MUST NOT mutate the receiver, MUST NOT have side effects, and
+// MUST be safe to call concurrently. The comparison is fast, deterministic,
+// and performs no additional allocations beyond the standard string comparison.
+//
+// Example:
+//
+//	b1 := conventional.Body("Fix authentication bug\n\nDetailed explanation")
+//	b2 := conventional.Body("Different content")
+//	b3 := conventional.Body("Fix authentication bug\n\nDetailed explanation")
+//	fmt.Println(b1.Equal(b2)) // Output: false
+//	fmt.Println(b1.Equal(b3)) // Output: true
+func (b Body) Equal(other Body) bool {
+	return b == other
+}
+
 // Validate checks that the Body value conforms to all constraints defined by
 // dxrel conventions for commit message bodies. This method satisfies the
 // model.Validatable interface's Validate requirement, enforcing data integrity.

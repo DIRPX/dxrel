@@ -82,6 +82,32 @@ func TestScope_IsZero(t *testing.T) {
 	}
 }
 
+func TestScope_Equal(t *testing.T) {
+	tests := []struct {
+		name string
+		s1   conventional.Scope
+		s2   conventional.Scope
+		want bool
+	}{
+		{"both empty", conventional.Scope(""), conventional.Scope(""), true},
+		{"same api", conventional.Scope("api"), conventional.Scope("api"), true},
+		{"same core", conventional.Scope("core"), conventional.Scope("core"), true},
+		{"same hierarchical", conventional.Scope("core/io"), conventional.Scope("core/io"), true},
+		{"different api vs core", conventional.Scope("api"), conventional.Scope("core"), false},
+		{"different hierarchical", conventional.Scope("core/io"), conventional.Scope("core/net"), false},
+		{"empty vs non-empty", conventional.Scope(""), conventional.Scope("api"), false},
+		{"case sensitive", conventional.Scope("api"), conventional.Scope("API"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.s1.Equal(tt.s2); got != tt.want {
+				t.Errorf("Scope.Equal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestScope_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

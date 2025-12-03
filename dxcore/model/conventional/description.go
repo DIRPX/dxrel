@@ -269,6 +269,41 @@ func (d Description) IsZero() bool {
 	return d == ""
 }
 
+// Equal reports whether this Description is equal to another Description value,
+// providing an explicit equality comparison method that follows common Go idioms
+// for string-based value types. While Description values can be compared using
+// the == operator directly, this method offers a named alternative that improves
+// code readability and maintains consistency with other model types in the dxrel
+// codebase.
+//
+// Equal performs a simple string comparison and returns true if both Description
+// values contain identical character sequences. The comparison is case-sensitive
+// and exact, considering each Unicode code point including preserved capitals,
+// punctuation, emojis, and whitespace. Empty descriptions (zero values) are
+// equal to other empty descriptions, and normalized descriptions are equal only
+// to identically normalized descriptions with matching case.
+//
+// This method is particularly useful in table-driven tests, assertion libraries,
+// commit message deduplication, and comparison operations where a method-based
+// approach is more idiomatic than operator-based comparison. It also provides
+// a consistent interface across all model types, some of which MAY require more
+// complex equality semantics than simple string comparison.
+//
+// This method MUST NOT mutate the receiver, MUST NOT have side effects, and
+// MUST be safe to call concurrently. The comparison is fast, deterministic,
+// and performs no additional allocations beyond the standard string comparison.
+//
+// Example:
+//
+//	d1 := conventional.Description("add user authentication")
+//	d2 := conventional.Description("fix database connection")
+//	d3 := conventional.Description("add user authentication")
+//	fmt.Println(d1.Equal(d2)) // Output: false
+//	fmt.Println(d1.Equal(d3)) // Output: true
+func (d Description) Equal(other Description) bool {
+	return d == other
+}
+
 // Validate checks that the Description value conforms to all constraints
 // defined by Conventional Commits best practices and dxrel conventions. This
 // method satisfies the model.Validatable interface's Validate requirement,

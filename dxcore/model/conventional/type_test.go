@@ -81,6 +81,31 @@ func TestType_IsZero(t *testing.T) {
 	}
 }
 
+func TestType_Equal(t *testing.T) {
+	tests := []struct {
+		name  string
+		t1    conventional.Type
+		t2    conventional.Type
+		want  bool
+	}{
+		{"same feat", conventional.Feat, conventional.Feat, true},
+		{"same fix", conventional.Fix, conventional.Fix, true},
+		{"same docs", conventional.Docs, conventional.Docs, true},
+		{"different feat vs fix", conventional.Feat, conventional.Fix, false},
+		{"different fix vs docs", conventional.Fix, conventional.Docs, false},
+		{"different feat vs revert", conventional.Feat, conventional.Revert, false},
+		{"zero value equals feat", conventional.Type(0), conventional.Feat, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.t1.Equal(tt.t2); got != tt.want {
+				t.Errorf("Type.Equal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestType_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

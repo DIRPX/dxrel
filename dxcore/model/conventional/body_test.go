@@ -81,6 +81,32 @@ func TestBody_IsZero(t *testing.T) {
 	}
 }
 
+func TestBody_Equal(t *testing.T) {
+	tests := []struct {
+		name string
+		b1   conventional.Body
+		b2   conventional.Body
+		want bool
+	}{
+		{"both empty", conventional.Body(""), conventional.Body(""), true},
+		{"same single line", conventional.Body("Fix bug"), conventional.Body("Fix bug"), true},
+		{"same multi-line", conventional.Body("Line 1\nLine 2"), conventional.Body("Line 1\nLine 2"), true},
+		{"same with blank lines", conventional.Body("Para 1\n\nPara 2"), conventional.Body("Para 1\n\nPara 2"), true},
+		{"different content", conventional.Body("Fix bug"), conventional.Body("Add feature"), false},
+		{"different line count", conventional.Body("Line 1"), conventional.Body("Line 1\nLine 2"), false},
+		{"different blank lines", conventional.Body("Para 1\nPara 2"), conventional.Body("Para 1\n\nPara 2"), false},
+		{"empty vs non-empty", conventional.Body(""), conventional.Body("content"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.b1.Equal(tt.b2); got != tt.want {
+				t.Errorf("Body.Equal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBody_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

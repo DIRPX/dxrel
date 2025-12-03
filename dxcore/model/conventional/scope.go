@@ -297,6 +297,40 @@ func (s Scope) IsZero() bool {
 	return s == ""
 }
 
+// Equal reports whether this Scope is equal to another Scope value, providing
+// an explicit equality comparison method that follows common Go idioms for
+// string-based value types. While Scope values can be compared using the ==
+// operator directly, this method offers a named alternative that improves code
+// readability and maintains consistency with other model types in the dxrel
+// codebase.
+//
+// Equal performs a simple string comparison and returns true if both Scope
+// values contain identical character sequences. The comparison is case-sensitive
+// and exact, considering each Unicode code point. Empty scopes (zero values)
+// are equal to other empty scopes, and normalized scopes are equal only to
+// identically normalized scopes.
+//
+// This method is particularly useful in table-driven tests, assertion libraries,
+// filter functions, and comparison operations where a method-based approach is
+// more idiomatic than operator-based comparison. It also provides a consistent
+// interface across all model types, some of which MAY require more complex
+// equality semantics than simple string comparison.
+//
+// This method MUST NOT mutate the receiver, MUST NOT have side effects, and
+// MUST be safe to call concurrently. The comparison is fast, deterministic,
+// and performs no additional allocations beyond the standard string comparison.
+//
+// Example:
+//
+//	s1 := conventional.Scope("api")
+//	s2 := conventional.Scope("core")
+//	s3 := conventional.Scope("api")
+//	fmt.Println(s1.Equal(s2)) // Output: false
+//	fmt.Println(s1.Equal(s3)) // Output: true
+func (s Scope) Equal(other Scope) bool {
+	return s == other
+}
+
 // Validate checks that the Scope value conforms to all constraints defined by
 // the Conventional Commits specification and dxrel conventions. This method
 // satisfies the model.Validatable interface's Validate requirement, enforcing

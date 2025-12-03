@@ -435,6 +435,38 @@ func (t Type) IsZero() bool {
 	return false
 }
 
+// Equal reports whether this Type is equal to another Type value, providing
+// an explicit equality comparison method that follows common Go idioms for
+// value types. While Type values can be compared using the == operator directly,
+// this method offers a named alternative that improves code readability and
+// maintains consistency with other model types in the dxrel codebase.
+//
+// Equal performs a simple value comparison and returns true if both Type values
+// represent the same commit type constant. The comparison is exact and considers
+// only the underlying uint8 representation. Zero values (Feat) are equal to
+// other zero values, and each defined constant is equal only to itself.
+//
+// This method is particularly useful in table-driven tests, assertion libraries,
+// and comparison functions where a method-based approach is more idiomatic than
+// operator-based comparison. It also provides a consistent interface across all
+// model types, some of which MAY require more complex equality semantics than
+// simple value comparison.
+//
+// This method MUST NOT mutate the receiver, MUST NOT have side effects, and
+// MUST be safe to call concurrently. The comparison is fast, deterministic,
+// and performs no allocations.
+//
+// Example:
+//
+//	t1 := conventional.Feat
+//	t2 := conventional.Fix
+//	t3 := conventional.Feat
+//	fmt.Println(t1.Equal(t2)) // Output: false
+//	fmt.Println(t1.Equal(t3)) // Output: true
+func (t Type) Equal(other Type) bool {
+	return t == other
+}
+
 // Validate checks that the Type value is within the valid range of defined
 // constants. This method satisfies the model.Validatable interface's Validate
 // requirement, enforcing data integrity.
