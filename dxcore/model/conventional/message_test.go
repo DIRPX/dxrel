@@ -130,7 +130,9 @@ func TestParseMessage(t *testing.T) {
 				Subject:  "add new API",
 				Breaking: true,
 				Body:     "",
-				Trailers: nil, // BREAKING CHANGE with space is not added to Trailers
+				Trailers: []conventional.Trailer{
+					{Key: "BREAKING CHANGE", Value: "removes old endpoint"},
+				},
 			},
 			wantErr: false,
 		},
@@ -156,7 +158,9 @@ func TestParseMessage(t *testing.T) {
 				Subject:  "add new API",
 				Breaking: true,
 				Body:     "",
-				Trailers: nil,
+				Trailers: []conventional.Trailer{
+					{Key: "BREAKING CHANGE", Value: "removes old endpoint"},
+				},
 			},
 			wantErr: false,
 		},

@@ -93,12 +93,12 @@ var (
 //
 // A Conventional Commit message follows this multi-line structure:
 //
-//   <type>[(<scope>)][!]: <subject>
-//   [blank line]
-//   [body]
-//   [blank line]
-//   [Trailer-Key: trailer value]
-//   [Trailer-Key: trailer value]
+//	<type>[(<scope>)][!]: <subject>
+//	[blank line]
+//	[body]
+//	[blank line]
+//	[Trailer-Key: trailer value]
+//	[Trailer-Key: trailer value]
 //
 // Where:
 //   - Header (line 1): REQUIRED - contains type, optional scope, optional breaking marker, subject
@@ -109,24 +109,24 @@ var (
 //
 // Examples:
 //
-//   Simple message (header only):
-//     "feat: add user authentication"
+//	Simple message (header only):
+//	  "feat: add user authentication"
 //
-//   With scope:
-//     "fix(api): resolve timeout issue"
+//	With scope:
+//	  "fix(api): resolve timeout issue"
 //
-//   With breaking change:
-//     "feat!: remove deprecated endpoint"
-//     "feat(api)!: change authentication flow"
+//	With breaking change:
+//	  "feat!: remove deprecated endpoint"
+//	  "feat(api)!: change authentication flow"
 //
-//   With body:
-//     "feat: add caching\n\nImproves performance significantly"
+//	With body:
+//	  "feat: add caching\n\nImproves performance significantly"
 //
-//   With trailers:
-//     "fix: resolve bug\n\nFixes: #123\nReviewed-by: Alice"
+//	With trailers:
+//	  "fix: resolve bug\n\nFixes: #123\nReviewed-by: Alice"
 //
-//   Complete message:
-//     "feat(api)!: add user endpoint\n\nAdds new REST API.\n\nFixes: #456\nSigned-off-by: Bob"
+//	Complete message:
+//	  "feat(api)!: add user endpoint\n\nAdds new REST API.\n\nFixes: #456\nSigned-off-by: Bob"
 //
 // Field Semantics:
 //
@@ -189,23 +189,22 @@ type Message struct {
 	// and result in Breaking=true. If multiple are present, Breaking is still just true.
 	//
 	// Format Notes:
-	//   - "BREAKING CHANGE:" (space) is the canonical Conventional Commits format but is
-	//     NOT a valid git trailer (git-interpret-trailers rejects spaces in keys)
-	//   - "BREAKING-CHANGE:" (hyphen) is git-compatible and can be parsed as a Trailer
+	//   - "BREAKING CHANGE:" (space) is the canonical Conventional Commits format
+	//   - "BREAKING-CHANGE:" (hyphen) is git-compatible alternative
 	//   - ParseMessage detects BOTH formats and sets Breaking=true for either
-	//   - Only "BREAKING-CHANGE:" (hyphen) will appear in the Trailers slice
-	//   - "BREAKING CHANGE:" (space) is detected but not added to Trailers
+	//   - BOTH formats are added to the Trailers slice for completeness
+	//   - The Key field preserves the original format ("BREAKING CHANGE" or "BREAKING-CHANGE")
 	//
 	// When true, this commit SHOULD trigger a major version bump in semantic versioning
 	// (unless version is 0.x.y, where breaking changes only bump minor version).
 	// Breaking changes SHOULD be explained in the Body or in the BREAKING CHANGE/BREAKING-CHANGE value.
 	//
 	// Examples:
-	//   - "feat!: remove endpoint" -> Breaking=true (from "!" marker)
-	//   - "feat: add\n\nBREAKING CHANGE: removes API" -> Breaking=true (space format)
-	//   - "feat: add\n\nBREAKING-CHANGE: removes API" -> Breaking=true (hyphen format, also in Trailers)
-	//   - "feat!: change\n\nBREAKING CHANGE: explanation" -> Breaking=true (multiple sources)
-	//   - "feat: add feature" -> Breaking=false (no markers)
+	//   - "feat!: remove endpoint" -> Breaking=true (from "!" marker), Trailers=nil
+	//   - "feat: add\n\nBREAKING CHANGE: removes API" -> Breaking=true (space format), Trailers=[{Key:"BREAKING CHANGE",...}]
+	//   - "feat: add\n\nBREAKING-CHANGE: removes API" -> Breaking=true (hyphen format), Trailers=[{Key:"BREAKING-CHANGE",...}]
+	//   - "feat!: change\n\nBREAKING CHANGE: explanation" -> Breaking=true (both), Trailers=[{Key:"BREAKING CHANGE",...}]
+	//   - "feat: add feature" -> Breaking=false (no markers), Trailers=nil
 	//
 	// The json/yaml tag "breaking,omitempty" omits this field when false (zero value).
 	Breaking bool `json:"breaking,omitempty" yaml:"breaking,omitempty"`
@@ -263,12 +262,12 @@ var _ model.Model = (*Message)(nil)
 //
 // Expected Message Format:
 //
-//   <type>[(<scope>)][!]: <subject>
-//   [blank line]
-//   [body paragraphs]
-//   [blank line]
-//   [Trailer-Key: trailer value]
-//   [Trailer-Key: trailer value]
+//	<type>[(<scope>)][!]: <subject>
+//	[blank line]
+//	[body paragraphs]
+//	[blank line]
+//	[Trailer-Key: trailer value]
+//	[Trailer-Key: trailer value]
 //
 // Where:
 //   - Line 1 (header): REQUIRED - must match messageHeaderPattern regex
@@ -288,27 +287,29 @@ var _ model.Model = (*Message)(nil)
 // Breaking Change Detection:
 //
 // Per Conventional Commits v1.0.0, a commit is breaking if ANY of these are true:
-//   1. Header contains "!" after type/scope: "feat!:" or "feat(scope)!:"
-//   2. Footer contains "BREAKING CHANGE:" (with space, Conventional Commits canonical format)
-//   3. Footer contains "BREAKING-CHANGE:" (with hyphen, git trailer compatible format)
+//  1. Header contains "!" after type/scope: "feat!:" or "feat(scope)!:"
+//  2. Footer contains "BREAKING CHANGE:" (with space, Conventional Commits canonical format)
+//  3. Footer contains "BREAKING-CHANGE:" (with hyphen, git trailer compatible format)
 //
 // All three mechanisms are equally valid and result in Breaking=true. The "!" marker
 // is detected during header parsing (Stage 4), while footer formats are detected
 // during trailer extraction (Stage 8).
 //
-// Important: "BREAKING CHANGE:" (with space) is NOT a valid git trailer because
-// git-interpret-trailers rejects spaces in keys. However, it's the canonical format
-// in the Conventional Commits spec, so we detect it via string matching. Only
-// "BREAKING-CHANGE:" (hyphen) can be parsed as a proper Trailer and added to the
-// Trailers slice.
+// Important: "BREAKING CHANGE:" (with space) is NOT a valid git trailer format
+// because git-interpret-trailers rejects spaces in keys. However, it's the canonical
+// format in the Conventional Commits spec. ParseMessage handles this specially:
+//   - Detects "BREAKING CHANGE:" via string matching (not git trailer parsing)
+//   - Creates a special Trailer with Key="BREAKING CHANGE" (preserving space)
+//   - Adds it to Trailers slice for completeness
+//   - "BREAKING-CHANGE:" (hyphen) is parsed normally as a git trailer
 //
 // Trailer Detection Algorithm:
 //
 // ParseMessage uses a backwards-scan algorithm to distinguish body from trailers:
-//   1. Find last non-blank line
-//   2. Scan backwards checking if each line matches trailer format (Key: value)
-//   3. Stop at first non-trailer line or blank line separating trailers from body
-//   4. If ALL non-blank lines are trailers, entire content is trailers (no body)
+//  1. Find last non-blank line
+//  2. Scan backwards checking if each line matches trailer format (Key: value)
+//  3. Stop at first non-trailer line or blank line separating trailers from body
+//  4. If ALL non-blank lines are trailers, entire content is trailers (no body)
 //
 // This approach correctly handles:
 //   - Messages with only trailers (no body)
@@ -358,64 +359,26 @@ var _ model.Model = (*Message)(nil)
 //	fmt.Println(len(msg.Trailers))    // Output: 1
 //	fmt.Println(msg.Trailers[0].Key)  // Output: "Fixes"
 func ParseMessage(s string) (Message, error) {
-	// === Stage 1: Input validation ===
+	// Stage 1: Input validation
 	if s == "" {
 		return Message{}, fmt.Errorf("message cannot be empty")
 	}
 
-	// === Stage 2: Normalization ===
-	// Convert Windows (CRLF) line endings to Unix (LF) for consistent parsing.
-	// Also remove any leading/trailing whitespace from the entire message.
+	// Stage 2: Normalize line endings and split into lines
 	normalized := strings.ReplaceAll(s, "\r\n", "\n")
 	normalized = strings.TrimSpace(normalized)
-
-	// Split normalized message into lines for line-by-line processing
 	lines := strings.Split(normalized, "\n")
 	if len(lines) == 0 {
 		return Message{}, fmt.Errorf("message cannot be empty")
 	}
 
-	// === Stage 3: Header parsing ===
-	// The first line MUST be a valid Conventional Commit header.
-	// Format: <type>[(<scope>)][!]: <subject>
-	header := strings.TrimSpace(lines[0])
-	matches := MessageHeaderRegexp.FindStringSubmatch(header)
-	if matches == nil {
-		return Message{}, fmt.Errorf("invalid Conventional Commit header format: %q", header)
-	}
-
-	// Extract components from regex capture groups (see messageHeaderPattern for group definitions)
-	typeStr := matches[1]       // Group 1: type (feat, fix, etc.)
-	scopeStr := matches[2]      // Group 2: scope (optional, without parens)
-	breakingMarker := matches[3] // Group 3: breaking change marker "!" (optional)
-	subjectStr := matches[4]    // Group 4: subject (remainder after colon)
-
-	// === Stage 4: Component validation ===
-	// Parse and validate the type string into a Type constant
-	commitType, err := ParseType(typeStr)
+	// Stage 3: Parse and validate header
+	commitType, scope, breaking, subject, err := parseMessageHeader(lines[0])
 	if err != nil {
-		return Message{}, fmt.Errorf("invalid type: %w", err)
+		return Message{}, err
 	}
 
-	// Parse and validate scope if present (empty string means no scope)
-	var scope Scope
-	if scopeStr != "" {
-		scope, err = ParseScope(scopeStr)
-		if err != nil {
-			return Message{}, fmt.Errorf("invalid scope: %w", err)
-		}
-	}
-
-	// Parse and validate the subject (required, must be non-empty)
-	subject, err := ParseSubject(subjectStr)
-	if err != nil {
-		return Message{}, fmt.Errorf("invalid subject: %w", err)
-	}
-
-	// Convert breaking change marker to boolean
-	breaking := breakingMarker == "!"
-
-	// Initialize message with all header components
+	// Initialize message with header components
 	msg := Message{
 		Type:     commitType,
 		Scope:    scope,
@@ -423,175 +386,39 @@ func ParseMessage(s string) (Message, error) {
 		Breaking: breaking,
 	}
 
-	// If message is header-only (single line), parsing is complete
+	// If message is header-only, parsing is complete
 	if len(lines) == 1 {
 		return msg, nil
 	}
 
-	// === Stage 5: Content detection ===
-	// Find the first non-blank line after the header. This marks the start
-	// of either body or trailers (we'll determine which in the next stage).
-	contentStartIdx := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) != "" {
-			contentStartIdx = i
-			break
-		}
-	}
-
+	// Stage 4: Find where content (body/trailers) starts
+	contentStartIdx := findContentStart(lines)
 	if contentStartIdx == -1 {
-		// No body or trailers, only blank lines after header
+		// No content, only blank lines after header
 		return msg, nil
 	}
 
-	// === Stage 6: Trailer detection (backwards scan algorithm) ===
-	// We use backwards scanning to distinguish trailers from body because:
-	// 1. Trailers MUST be at the end of the message
-	// 2. Trailers are separated from body by a blank line
-	// 3. Body can contain text that looks like trailers, but only end-of-message trailers count
-	//
-	// This helper checks if a line looks like a trailer (either git format or BREAKING CHANGE).
-	// Two formats are considered trailers:
-	//   1. Git trailer format: "Key: value" where Key matches ^[A-Za-z][A-Za-z0-9-]*$
-	//   2. BREAKING CHANGE format: "BREAKING CHANGE: ..." (Conventional Commits canonical format)
-	isTrailerLine := func(line string) bool {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			return false
-		}
+	// Stage 5: Find where trailer block starts (using backwards scan)
+	trailerStartIdx := findTrailerStart(lines, contentStartIdx)
 
-		// Check for BREAKING CHANGE with space (Conventional Commits format)
-		if strings.HasPrefix(line, "BREAKING CHANGE:") || strings.HasPrefix(line, "BREAKING CHANGE ") {
-			return true
-		}
-
-		// Check for standard git trailer format
-		colonIdx := strings.Index(line, ":")
-		if colonIdx == -1 {
-			return false // No colon, can't be a trailer
-		}
-		key := strings.TrimSpace(line[:colonIdx])
-		return TrailerKeyRegexp.MatchString(key) // Check key against ^[A-Za-z][A-Za-z0-9-]*$
+	// Stage 6: Extract body (if exists)
+	body, err := extractBody(lines, contentStartIdx, trailerStartIdx)
+	if err != nil {
+		return Message{}, fmt.Errorf("invalid body: %w", err)
 	}
+	msg.Body = body
 
-	trailerStartIdx := -1 // Will hold the line index where trailers begin (or -1 if no trailers)
-	lastNonBlankIdx := -1 // Last non-blank line in the message
-
-	// Find the last non-blank line (working backwards from end of message)
-	for i := len(lines) - 1; i >= contentStartIdx; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
-			lastNonBlankIdx = i
-			break
-		}
+	// Stage 7: Extract trailers and detect breaking changes in footer
+	trailers, hasBreakingChange, err := extractTrailers(lines, trailerStartIdx)
+	if err != nil {
+		return Message{}, fmt.Errorf("invalid trailers: %w", err)
 	}
+	msg.Trailers = trailers
 
-	if lastNonBlankIdx != -1 {
-		// Scan backwards from last non-blank line to find where trailer block starts
-		inTrailers := true // Assume we're in trailers until we find a non-trailer
-		for i := lastNonBlankIdx; i >= contentStartIdx; i-- {
-			line := strings.TrimSpace(lines[i])
-
-			if line == "" {
-				// Blank line encountered while scanning backwards
-				if inTrailers && trailerStartIdx == -1 {
-					// This blank line separates trailers from body
-					// Trailers start on the next line (i+1)
-					trailerStartIdx = i + 1
-					break
-				}
-				// Skip blank lines within trailer block
-				continue
-			}
-
-			if !isTrailerLine(lines[i]) {
-				// Found a non-trailer line, so we're no longer in the trailer block
-				inTrailers = false
-			}
-		}
-
-		// Special case: if ALL non-blank lines from contentStartIdx to end are trailers,
-		// then the entire content is trailers (no body). This handles messages like:
-		//   "fix: bug\n\nFixes: #123\nReviewed-by: Alice"
-		if inTrailers && trailerStartIdx == -1 {
-			trailerStartIdx = contentStartIdx
-		}
-	}
-
-	// === Stage 7: Body extraction ===
-	// Extract body text from the region between header and trailers.
-	// Body is everything after the header and before the trailer block (if present).
-	var bodyEndIdx int
-
-	if trailerStartIdx != -1 && trailerStartIdx > contentStartIdx {
-		// Trailers detected: body ends where trailers start.
-		// Trim any blank lines between last body line and trailer separator.
-		bodyEndIdx = trailerStartIdx
-		for i := trailerStartIdx - 1; i >= contentStartIdx; i-- {
-			if strings.TrimSpace(lines[i]) != "" {
-				bodyEndIdx = i + 1
-				break
-			}
-		}
-	} else if trailerStartIdx == -1 {
-		// No trailers detected: everything after header is body
-		bodyEndIdx = len(lines)
-	} else {
-		// All content is trailers (trailerStartIdx == contentStartIdx)
-		bodyEndIdx = contentStartIdx
-	}
-
-	// Extract and parse body if present
-	if contentStartIdx < bodyEndIdx {
-		bodyLines := lines[contentStartIdx:bodyEndIdx]
-		bodyText := strings.Join(bodyLines, "\n")
-		bodyText = strings.TrimSpace(bodyText) // Remove leading/trailing whitespace
-
-		if bodyText != "" {
-			body, err := ParseBody(bodyText)
-			if err != nil {
-				return Message{}, fmt.Errorf("invalid body: %w", err)
-			}
-			msg.Body = body
-		}
-	}
-
-	// === Stage 8: Trailer extraction and breaking change detection ===
-	// Parse each trailer line into a Trailer struct. Invalid trailer lines
-	// are silently skipped to allow flexibility in formatting.
-	//
-	// Additionally, detect BREAKING CHANGE markers in footer. Per Conventional Commits
-	// spec v1.0.0, both "BREAKING CHANGE:" and "BREAKING-CHANGE:" indicate breaking changes.
-	if trailerStartIdx != -1 {
-		for i := trailerStartIdx; i < len(lines); i++ {
-			line := strings.TrimSpace(lines[i])
-			if line == "" {
-				continue // Skip blank lines within trailer block
-			}
-
-			// Check for BREAKING CHANGE with space (Conventional Commits spec format).
-			// This format is widely used but doesn't conform to git trailer format,
-			// so it won't parse as a valid Trailer. We detect it separately.
-			if strings.HasPrefix(line, "BREAKING CHANGE:") || strings.HasPrefix(line, "BREAKING CHANGE ") {
-				msg.Breaking = true
-				// Don't try to parse as trailer since space in key is invalid
-				continue
-			}
-
-			// Try to parse as standard git trailer (e.g., "BREAKING-CHANGE:", "Fixes:", etc.)
-			trailer, err := ParseTrailer(line)
-			if err != nil {
-				// Skip malformed trailer lines rather than failing the entire parse.
-				// This allows messages with some invalid trailers to still be parsed.
-				continue
-			}
-			msg.Trailers = append(msg.Trailers, trailer)
-
-			// Check for BREAKING-CHANGE trailer (git-compatible format with hyphen).
-			// This is the git-interpret-trailers compatible version of "BREAKING CHANGE".
-			if trailer.Key == "BREAKING-CHANGE" {
-				msg.Breaking = true
-			}
-		}
+	// Set Breaking flag if any footer breaking change marker found
+	// (this is idempotent with header "!" marker)
+	if hasBreakingChange {
+		msg.Breaking = true
 	}
 
 	return msg, nil
@@ -607,12 +434,12 @@ func ParseMessage(s string) (Message, error) {
 //
 // Output Format:
 //
-//   <type>[(<scope>)][!]: <subject>
-//   [blank line]
-//   [body]
-//   [blank line]
-//   [Trailer-Key: trailer value]
-//   [Trailer-Key: trailer value]
+//	<type>[(<scope>)][!]: <subject>
+//	[blank line]
+//	[body]
+//	[blank line]
+//	[Trailer-Key: trailer value]
+//	[Trailer-Key: trailer value]
 //
 // Where:
 //   - Header: Always present, format is type[(scope)][!]: subject
@@ -640,18 +467,18 @@ func ParseMessage(s string) (Message, error) {
 //
 // Example Outputs:
 //
-//   Simple message:
-//     Input:  Message{Type: Feat, Subject: "add feature"}
-//     Output: "feat: add feature"
+//	Simple message:
+//	  Input:  Message{Type: Feat, Subject: "add feature"}
+//	  Output: "feat: add feature"
 //
-//   With scope and breaking:
-//     Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow"}
-//     Output: "fix(api)!: change flow"
+//	With scope and breaking:
+//	  Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow"}
+//	  Output: "fix(api)!: change flow"
 //
-//   Complete message:
-//     Input:  Message{Type: Feat, Scope: "api", Subject: "add endpoint",
-//                     Body: "Adds new API", Trailers: [{Key: "Fixes", Value: "#123"}]}
-//     Output: "feat(api): add endpoint\n\nAdds new API\n\nFixes: #123"
+//	Complete message:
+//	  Input:  Message{Type: Feat, Scope: "api", Subject: "add endpoint",
+//	                  Body: "Adds new API", Trailers: [{Key: "Fixes", Value: "#123"}]}
+//	  Output: "feat(api): add endpoint\n\nAdds new API\n\nFixes: #123"
 func (m Message) String() string {
 	var parts []string
 
@@ -669,13 +496,13 @@ func (m Message) String() string {
 
 	// Add body if present, with blank line separator
 	if !m.Body.IsZero() {
-		parts = append(parts, "")            // Blank line before body
+		parts = append(parts, "") // Blank line before body
 		parts = append(parts, m.Body.String())
 	}
 
 	// Add trailers if present, with blank line separator
 	if len(m.Trailers) > 0 {
-		parts = append(parts, "")            // Blank line before trailers
+		parts = append(parts, "") // Blank line before trailers
 		for _, trailer := range m.Trailers {
 			parts = append(parts, trailer.String())
 		}
@@ -707,18 +534,18 @@ func (m Message) String() string {
 //
 // Redacted Output Format:
 //
-//   <type>[(<scope>)][!]: <subject>
+//	<type>[(<scope>)][!]: <subject>
 //
 // This format is identical to the first line of String() output.
 //
 // Example Outputs:
 //
-//   Input:  Message{Type: Feat, Subject: "add feature"}
-//   Output: "feat: add feature"
+//	Input:  Message{Type: Feat, Subject: "add feature"}
+//	Output: "feat: add feature"
 //
-//   Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow",
-//                   Body: "Long explanation...", Trailers: [...]}
-//   Output: "fix(api)!: change flow"
+//	Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow",
+//	                Body: "Long explanation...", Trailers: [...]}
+//	Output: "fix(api)!: change flow"
 //
 // Use Cases:
 //
@@ -895,4 +722,234 @@ func (m *Message) UnmarshalYAML(node *yaml.Node) error {
 
 	*m = Message(tmp)
 	return m.Validate()
+}
+
+// parseMessageHeader parses and validates the first line of a commit message,
+// extracting type, scope, breaking marker, and subject components.
+//
+// Returns the parsed components or an error if the header is invalid.
+func parseMessageHeader(headerLine string) (commitType Type, scope Scope, breaking bool, subject Subject, err error) {
+	header := strings.TrimSpace(headerLine)
+	matches := MessageHeaderRegexp.FindStringSubmatch(header)
+	if matches == nil {
+		return Type(0), Scope(""), false, Subject(""), fmt.Errorf("invalid Conventional Commit header format: %q", header)
+	}
+
+	// Extract components from regex capture groups
+	typeStr := matches[1]        // Group 1: type (feat, fix, etc.)
+	scopeStr := matches[2]       // Group 2: scope (optional, without parens)
+	breakingMarker := matches[3] // Group 3: breaking change marker "!" (optional)
+	subjectStr := matches[4]     // Group 4: subject (remainder after colon)
+
+	// Parse and validate type
+	commitType, err = ParseType(typeStr)
+	if err != nil {
+		return Type(0), Scope(""), false, Subject(""), fmt.Errorf("invalid type: %w", err)
+	}
+
+	// Parse and validate scope if present
+	if scopeStr != "" {
+		scope, err = ParseScope(scopeStr)
+		if err != nil {
+			return Type(0), Scope(""), false, Subject(""), fmt.Errorf("invalid scope: %w", err)
+		}
+	}
+
+	// Parse and validate subject
+	subject, err = ParseSubject(subjectStr)
+	if err != nil {
+		return Type(0), Scope(""), false, Subject(""), fmt.Errorf("invalid subject: %w", err)
+	}
+
+	// Convert breaking marker to boolean
+	breaking = breakingMarker == "!"
+
+	return commitType, scope, breaking, subject, nil
+}
+
+// findContentStart finds the index of the first non-blank line after the header.
+// Returns -1 if no content exists (only blank lines after header).
+func findContentStart(lines []string) int {
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+// isTrailerOrBreakingChange checks if a line looks like a trailer or BREAKING CHANGE.
+// This includes:
+//   - Standard git trailer format: "Key: value" where Key matches ^[A-Za-z][A-Za-z0-9-]*$
+//   - BREAKING CHANGE with space: "BREAKING CHANGE: ..."
+//   - BREAKING-CHANGE with hyphen: "BREAKING-CHANGE: ..."
+func isTrailerOrBreakingChange(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return false
+	}
+
+	// Check for BREAKING CHANGE with space (Conventional Commits canonical format)
+	if strings.HasPrefix(line, "BREAKING CHANGE:") || strings.HasPrefix(line, "BREAKING CHANGE ") {
+		return true
+	}
+
+	// Check for standard git trailer format
+	colonIdx := strings.Index(line, ":")
+	if colonIdx == -1 {
+		return false
+	}
+	key := strings.TrimSpace(line[:colonIdx])
+	return TrailerKeyRegexp.MatchString(key)
+}
+
+// findTrailerStart uses backwards scanning to find where the trailer block starts.
+// Returns -1 if no trailers are found.
+//
+// Algorithm:
+//  1. Find last non-blank line
+//  2. Scan backwards checking if each line is a trailer
+//  3. Stop at first non-trailer line or blank line separating trailers from body
+//  4. If ALL non-blank lines are trailers, entire content is trailers (no body)
+func findTrailerStart(lines []string, contentStartIdx int) int {
+	if contentStartIdx == -1 {
+		return -1
+	}
+
+	// Find last non-blank line
+	lastNonBlankIdx := -1
+	for i := len(lines) - 1; i >= contentStartIdx; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			lastNonBlankIdx = i
+			break
+		}
+	}
+
+	if lastNonBlankIdx == -1 {
+		return -1
+	}
+
+	// Scan backwards to find start of trailer block
+	trailerStartIdx := -1
+	inTrailers := true
+
+	for i := lastNonBlankIdx; i >= contentStartIdx; i-- {
+		line := strings.TrimSpace(lines[i])
+
+		if line == "" {
+			// Blank line encountered
+			if inTrailers && trailerStartIdx == -1 {
+				// This blank line separates trailers from body
+				trailerStartIdx = i + 1
+				break
+			}
+			continue
+		}
+
+		if !isTrailerOrBreakingChange(lines[i]) {
+			// Not a trailer line
+			inTrailers = false
+		}
+	}
+
+	// Special case: all non-blank lines are trailers
+	if inTrailers && trailerStartIdx == -1 {
+		trailerStartIdx = contentStartIdx
+	}
+
+	return trailerStartIdx
+}
+
+// extractBody extracts body text from lines between contentStart and trailerStart.
+// Returns empty Body if no body content exists.
+func extractBody(lines []string, contentStartIdx, trailerStartIdx int) (Body, error) {
+	if contentStartIdx == -1 {
+		return Body(""), nil
+	}
+
+	var bodyEndIdx int
+
+	if trailerStartIdx != -1 && trailerStartIdx > contentStartIdx {
+		// Trailers exist: body ends before trailers
+		// Trim blank lines between last body line and trailer separator
+		bodyEndIdx = trailerStartIdx
+		for i := trailerStartIdx - 1; i >= contentStartIdx; i-- {
+			if strings.TrimSpace(lines[i]) != "" {
+				bodyEndIdx = i + 1
+				break
+			}
+		}
+	} else if trailerStartIdx == -1 {
+		// No trailers: everything is body
+		bodyEndIdx = len(lines)
+	} else {
+		// All content is trailers
+		return Body(""), nil
+	}
+
+	if contentStartIdx >= bodyEndIdx {
+		return Body(""), nil
+	}
+
+	bodyLines := lines[contentStartIdx:bodyEndIdx]
+	bodyText := strings.Join(bodyLines, "\n")
+	bodyText = strings.TrimSpace(bodyText)
+
+	if bodyText == "" {
+		return Body(""), nil
+	}
+
+	return ParseBody(bodyText)
+}
+
+// extractTrailers extracts and parses all trailer lines from the trailer block.
+// Also detects BREAKING CHANGE/BREAKING-CHANGE and sets the breaking flag.
+//
+// Returns:
+//   - trailers: slice of parsed Trailer objects (includes BREAKING CHANGE as special Trailer)
+//   - hasBreakingChange: true if any BREAKING CHANGE/BREAKING-CHANGE trailer found
+func extractTrailers(lines []string, trailerStartIdx int) ([]Trailer, bool, error) {
+	if trailerStartIdx == -1 {
+		return nil, false, nil
+	}
+
+	var trailers []Trailer
+	hasBreakingChange := false
+
+	for i := trailerStartIdx; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		// Special handling for BREAKING CHANGE with space
+		// This is not a valid git trailer format, but we still want to capture it
+		if strings.HasPrefix(line, "BREAKING CHANGE:") {
+			hasBreakingChange = true
+			// Extract the value after "BREAKING CHANGE:"
+			value := strings.TrimSpace(strings.TrimPrefix(line, "BREAKING CHANGE:"))
+			// Create a special Trailer with the space preserved in display
+			trailers = append(trailers, Trailer{
+				Key:   "BREAKING CHANGE",
+				Value: value,
+			})
+			continue
+		}
+
+		// Try to parse as standard git trailer
+		trailer, err := ParseTrailer(line)
+		if err != nil {
+			// Skip malformed trailer lines
+			continue
+		}
+
+		trailers = append(trailers, trailer)
+
+		// Check for BREAKING-CHANGE with hyphen
+		if trailer.Key == "BREAKING-CHANGE" {
+			hasBreakingChange = true
+		}
+	}
+
+	return trailers, hasBreakingChange, nil
 }
