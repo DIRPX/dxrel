@@ -28,146 +28,337 @@ import (
 
 const (
 	// messageHeaderPattern is the regular expression pattern used to parse
-	// Conventional Commit message headers.
+	// Conventional Commit message headers according to the Conventional Commits
+	// specification version 1.0.0.
 	//
-	// The pattern matches the header format:
+	// The pattern enforces the canonical header format:
 	//   <type>[(<scope>)][!]: <subject>
 	//
-	// Capture groups:
-	//   1. type - commit type (feat, fix, etc.)
-	//   2. scope - optional scope in parentheses (without the parens)
-	//   3. breaking - optional "!" for breaking change
-	//   4. subject - commit subject/description
+	// Where:
+	//   - type MUST be lowercase letters only (enforced by [a-z]+)
+	//   - scope is optional, enclosed in parentheses, can contain any characters except ")"
+	//   - breaking change marker "!" is optional and MUST appear after scope (if present)
+	//   - colon and space separate header from subject
+	//   - subject MUST be non-empty and can contain any characters
 	//
-	// Examples that match:
-	//   - "feat: add new feature"
-	//   - "fix(auth): resolve login issue"
-	//   - "feat!: breaking change"
-	//   - "fix(api)!: breaking fix"
+	// Capture groups (1-indexed):
+	//   1. type     - commit type (feat, fix, docs, etc.) - lowercase only
+	//   2. scope    - optional scope (without parentheses) - any chars except ")"
+	//   3. breaking - optional "!" indicating breaking change
+	//   4. subject  - commit subject/description - any non-empty string
+	//
+	// Examples that match this pattern:
+	//   - "feat: add new feature"              -> type=feat, scope="", breaking="", subject="add new feature"
+	//   - "fix(auth): resolve login issue"     -> type=fix, scope="auth", breaking="", subject="resolve login issue"
+	//   - "feat!: breaking change"             -> type=feat, scope="", breaking="!", subject="breaking change"
+	//   - "fix(api)!: breaking fix"            -> type=fix, scope="api", breaking="!", subject="breaking fix"
+	//
+	// Examples that do NOT match:
+	//   - "FEAT: uppercase type"               -> uppercase type not allowed
+	//   - "feat add feature"                   -> missing colon
+	//   - "feat:"                              -> missing subject
+	//   - "feat(scope"                         -> unclosed parenthesis
 	messageHeaderPattern = `^([a-z]+)(?:\(([^)]+)\))?(!)?:\s*(.+)$`
 )
 
 var (
-	// MessageHeaderRegexp is the compiled regular expression for parsing
-	// Conventional Commit headers.
+	// MessageHeaderRegexp is the compiled regular expression used for parsing
+	// Conventional Commit message headers. This regex is pre-compiled at package
+	// initialization for performance, allowing O(1) reuse across all ParseMessage
+	// calls without recompilation overhead.
+	//
+	// The regex enforces the Conventional Commits specification format and extracts
+	// the type, optional scope, optional breaking change marker, and subject from
+	// the first line of a commit message.
+	//
+	// This variable is exported to allow external packages to validate message
+	// headers without parsing the entire message structure.
 	MessageHeaderRegexp = regexp.MustCompile(messageHeaderPattern)
 )
 
-// Message represents a complete Conventional Commit message with all its
-// components: type, optional scope, subject, optional body, and optional
-// trailers.
+// Message represents a complete Conventional Commit message following the
+// Conventional Commits specification version 1.0.0. It encapsulates all
+// components of a structured commit message: required type and subject,
+// optional scope, breaking change indicator, body, and trailers.
 //
-// This type implements the model.Model interface, providing validation,
-// serialization to JSON and YAML, safe logging, type identification, and
-// zero-value detection. A Message encapsulates the full structure of a
-// commit message following the Conventional Commits specification.
+// This type implements the complete model.Model interface, providing:
+//   - Validation: Validate() ensures all components meet specification requirements
+//   - Serialization: MarshalJSON/UnmarshalJSON and MarshalYAML/UnmarshalYAML
+//   - Safe logging: String() and Redacted() for full and header-only output
+//   - Type identification: TypeName() returns "Message"
+//   - Zero-value detection: IsZero() checks if Type and Subject are present
+//   - Equality comparison: Equal() performs deep equality check
 //
-// The Message structure follows this format:
-//   <type>[!][(<scope>)]: <subject>
+// Message Structure and Format:
+//
+// A Conventional Commit message follows this multi-line structure:
+//
+//   <type>[(<scope>)][!]: <subject>
 //   [blank line]
 //   [body]
 //   [blank line]
-//   [trailer: value]
-//   [trailer: value]
+//   [Trailer-Key: trailer value]
+//   [Trailer-Key: trailer value]
+//
+// Where:
+//   - Header (line 1): REQUIRED - contains type, optional scope, optional breaking marker, subject
+//   - Blank line: separates header from body (if body present)
+//   - Body: OPTIONAL - longer description, can be multiple paragraphs
+//   - Blank line: separates body from trailers (if trailers present)
+//   - Trailers: OPTIONAL - git-style trailers (Fixes, Signed-off-by, etc.)
 //
 // Examples:
-//   - Simple: "feat: add user authentication"
-//   - With scope: "fix(api): resolve timeout issue"
-//   - With breaking change: "feat!: remove deprecated endpoint"
-//   - With body: "feat: add caching\n\nImproves performance significantly"
-//   - With trailers: "fix: bug\n\nFixes: #123\nReviewed-by: Alice"
 //
-// The zero value of Message is not valid; a valid message MUST have at least
-// a Type and Subject.
+//   Simple message (header only):
+//     "feat: add user authentication"
+//
+//   With scope:
+//     "fix(api): resolve timeout issue"
+//
+//   With breaking change:
+//     "feat!: remove deprecated endpoint"
+//     "feat(api)!: change authentication flow"
+//
+//   With body:
+//     "feat: add caching\n\nImproves performance significantly"
+//
+//   With trailers:
+//     "fix: resolve bug\n\nFixes: #123\nReviewed-by: Alice"
+//
+//   Complete message:
+//     "feat(api)!: add user endpoint\n\nAdds new REST API.\n\nFixes: #456\nSigned-off-by: Bob"
+//
+// Field Semantics:
+//
+//   - Type: The commit type (feat, fix, docs, etc.) - REQUIRED, MUST be valid Type constant
+//   - Scope: Area of codebase affected - OPTIONAL, lowercase with hyphens
+//   - Subject: Short description - REQUIRED, 1-72 characters, no period at end
+//   - Breaking: Breaking change indicator - derived from "!" in header
+//   - Body: Long description - OPTIONAL, provides context and rationale
+//   - Trailers: Key-value metadata - OPTIONAL, follows git trailer format
+//
+// Zero Value:
+//
+// The zero value of Message is NOT valid. A valid Message MUST have:
+//   - A non-zero Type (though Type's zero value Feat is valid, use IsZero to detect uninitialized)
+//   - A non-zero Subject (non-empty string)
+//
+// Use ParseMessage to create Message instances from strings, or construct
+// manually and call Validate() to ensure correctness.
 type Message struct {
-	// Type is the commit type (feat, fix, docs, etc.)
+	// Type categorizes the nature of the change (feat, fix, docs, refactor, etc.).
+	// This field is REQUIRED and MUST be a valid Type constant. The Type determines
+	// semantic versioning impact: feat triggers minor version bump, fix triggers
+	// patch version bump, and other types typically don't affect version.
+	//
+	// The json/yaml tag "type" serializes this field without omitempty, ensuring
+	// it always appears in serialized output.
 	Type Type `json:"type" yaml:"type"`
 
-	// Scope is the optional scope indicating what area of the codebase is
-	// affected. Empty string means no scope.
+	// Scope indicates the area of the codebase affected by this change (e.g., "api",
+	// "auth", "parser"). This field is OPTIONAL. When empty, the message applies to
+	// the project as a whole rather than a specific component.
+	//
+	// Scope MUST be lowercase, can contain hyphens, and SHOULD be concise (typically
+	// one word). The scope helps readers quickly identify which subsystem changed.
+	//
+	// The json/yaml tag "scope,omitempty" omits this field when empty (zero value).
 	Scope Scope `json:"scope,omitempty" yaml:"scope,omitempty"`
 
-	// Subject is the short description of the change (required).
+	// Subject is a brief, imperative-mood description of the change (e.g., "add user
+	// authentication", "fix memory leak"). This field is REQUIRED and MUST be 1-72
+	// characters long.
+	//
+	// Subject SHOULD use imperative mood ("add" not "added" or "adds"), start with
+	// lowercase, and NOT end with a period. The subject appears in commit logs and
+	// changelogs, so it MUST be clear and concise.
+	//
+	// The json/yaml tag "subject" serializes this field without omitempty, ensuring
+	// it always appears in serialized output.
 	Subject Subject `json:"subject" yaml:"subject"`
 
-	// Breaking indicates if this is a breaking change (indicated by "!" in
-	// the header).
+	// Breaking indicates whether this commit introduces a breaking change (backwards-
+	// incompatible modification to public APIs or behavior). This field is derived
+	// from the "!" marker in the commit header.
+	//
+	// When true, this commit SHOULD trigger a major version bump in semantic versioning
+	// (unless version is 0.x.y, where breaking changes only bump minor version).
+	// Breaking changes SHOULD be explained in the Body or in "BREAKING CHANGE:" trailer.
+	//
+	// The json/yaml tag "breaking,omitempty" omits this field when false (zero value).
 	Breaking bool `json:"breaking,omitempty" yaml:"breaking,omitempty"`
 
-	// Body is the optional longer description providing additional context.
-	// Empty string means no body.
+	// Body provides extended description, context, rationale, or implementation details
+	// for the change. This field is OPTIONAL and can contain multiple paragraphs
+	// separated by blank lines.
+	//
+	// The Body SHOULD explain:
+	//   - Why the change was necessary (motivation)
+	//   - How it addresses the problem (approach)
+	//   - Any side effects or implications (consequences)
+	//
+	// Body MUST NOT contain CRLF line endings; use LF (\n) only. Maximum size is
+	// defined by BodyMaxBytes (10KB) and BodyMaxLines (200 lines).
+	//
+	// The json/yaml tag "body,omitempty" omits this field when empty (zero value).
 	Body Body `json:"body,omitempty" yaml:"body,omitempty"`
 
-	// Trailers are optional key-value pairs at the end of the message
-	// (Signed-off-by, Fixes, etc.).
+	// Trailers are git-style key-value metadata pairs appended to the message
+	// (e.g., "Fixes: #123", "Signed-off-by: Alice <alice@example.com>"). This
+	// field is OPTIONAL and can contain zero or more trailers.
+	//
+	// Common trailer keys include:
+	//   - Fixes / Closes / Resolves: Issue references
+	//   - Signed-off-by: Developer certificate of origin
+	//   - Co-authored-by: Multiple authors
+	//   - Reviewed-by: Code review approval
+	//   - Acked-by: Acknowledgment
+	//   - BREAKING CHANGE: Breaking change description (alternative to "!" marker)
+	//
+	// Trailers MUST appear at the end of the message, separated from the body by
+	// a blank line. Trailer keys MUST start with uppercase letter and can contain
+	// letters, numbers, and hyphens.
+	//
+	// The json/yaml tag "trailers,omitempty" omits this field when empty (nil/zero-length slice).
 	Trailers []Trailer `json:"trailers,omitempty" yaml:"trailers,omitempty"`
 }
 
 // Compile-time assertion that Message implements model.Model.
 var _ model.Model = (*Message)(nil)
 
-// ParseMessage parses a raw commit message string into a Message structure.
+// ParseMessage parses a raw commit message string into a structured Message,
+// extracting and validating all components according to the Conventional Commits
+// specification version 1.0.0.
 //
-// ParseMessage applies the Conventional Commits specification to extract
-// type, scope, subject, body, and trailers from the input string. The
-// function handles various formatting variations including different line
-// endings (LF, CRLF), extra whitespace, and missing optional components.
+// This function implements a multi-stage parsing algorithm:
 //
-// The expected format is:
-//   <type>[!][(<scope>)]: <subject>
+//  1. Normalization: Converts CRLF to LF, trims leading/trailing whitespace
+//  2. Header parsing: Uses MessageHeaderRegexp to extract type, scope, breaking marker, subject
+//  3. Content detection: Finds first non-blank line after header
+//  4. Trailer detection: Scans backwards from end to locate trailer block
+//  5. Body extraction: Extracts lines between header and trailers
+//  6. Component validation: Validates each extracted component
+//
+// Expected Message Format:
+//
+//   <type>[(<scope>)][!]: <subject>
 //   [blank line]
 //   [body paragraphs]
 //   [blank line]
 //   [Trailer-Key: trailer value]
+//   [Trailer-Key: trailer value]
 //
-// If the input does not match the Conventional Commits header format,
-// ParseMessage returns an error. The subject is required; type is required;
-// scope, body, and trailers are optional.
+// Where:
+//   - Line 1 (header): REQUIRED - must match messageHeaderPattern regex
+//   - Blank lines: separate header/body and body/trailers
+//   - Body: OPTIONAL - any text between header and trailers
+//   - Trailers: OPTIONAL - must match TrailerKeyRegexp pattern
 //
-// Example usage:
+// Parsing Rules:
 //
-//	msg, err := conventional.ParseMessage("feat(api): add endpoint\n\nAdds new user API\n\nFixes: #123")
+//   - Type: REQUIRED, must be lowercase, must be valid Type constant
+//   - Scope: OPTIONAL, extracted from parentheses, validated by ParseScope
+//   - Breaking: OPTIONAL, "!" marker sets Breaking=true
+//   - Subject: REQUIRED, non-empty string after ":", validated by ParseSubject
+//   - Body: OPTIONAL, all non-trailer content after header
+//   - Trailers: OPTIONAL, detected by scanning backwards from end, must match trailer format
+//
+// Trailer Detection Algorithm:
+//
+// ParseMessage uses a backwards-scan algorithm to distinguish body from trailers:
+//   1. Find last non-blank line
+//   2. Scan backwards checking if each line matches trailer format (Key: value)
+//   3. Stop at first non-trailer line or blank line separating trailers from body
+//   4. If ALL non-blank lines are trailers, entire content is trailers (no body)
+//
+// This approach correctly handles:
+//   - Messages with only trailers (no body)
+//   - Messages with only body (no trailers)
+//   - Messages with both body and trailers
+//   - Blank lines within body (not mistaken for trailer separator)
+//
+// Error Conditions:
+//
+// ParseMessage returns an error if:
+//   - Input string is empty or contains only whitespace
+//   - Header line does not match Conventional Commits format
+//   - Type is invalid or unknown
+//   - Scope format is invalid (if present)
+//   - Subject is empty or invalid
+//   - Body exceeds size limits (if present)
+//
+// Note: Invalid trailer lines are silently skipped rather than causing errors,
+// allowing flexibility in trailer formatting while still extracting valid trailers.
+//
+// Line Ending Handling:
+//
+// ParseMessage normalizes all line endings to LF (\n) before parsing, accepting
+// input with LF, CRLF, or mixed line endings. The resulting Message.Body will
+// always use LF line endings.
+//
+// Example Usage:
+//
+//	// Simple message
+//	msg, err := ParseMessage("feat: add user authentication")
+//	// Result: Type=Feat, Subject="add user authentication"
+//
+//	// Message with scope and breaking change
+//	msg, err := ParseMessage("fix(api)!: change authentication flow")
+//	// Result: Type=Fix, Scope="api", Breaking=true, Subject="change authentication flow"
+//
+//	// Complete message
+//	input := "feat(api): add endpoint\n\nAdds new user API\n\nFixes: #123"
+//	msg, err := ParseMessage(input)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	fmt.Println(msg.Type)    // Output: TypeFeat
-//	fmt.Println(msg.Scope)   // Output: "api"
-//	fmt.Println(msg.Subject) // Output: "add endpoint"
+//	fmt.Println(msg.Type)             // Output: Feat
+//	fmt.Println(msg.Scope)            // Output: Scope("api")
+//	fmt.Println(msg.Subject)          // Output: Subject("add endpoint")
+//	fmt.Println(msg.Body)             // Output: Body("Adds new user API")
+//	fmt.Println(len(msg.Trailers))    // Output: 1
+//	fmt.Println(msg.Trailers[0].Key)  // Output: "Fixes"
 func ParseMessage(s string) (Message, error) {
+	// === Stage 1: Input validation ===
 	if s == "" {
 		return Message{}, fmt.Errorf("message cannot be empty")
 	}
 
-	// Normalize line endings to LF
+	// === Stage 2: Normalization ===
+	// Convert Windows (CRLF) line endings to Unix (LF) for consistent parsing.
+	// Also remove any leading/trailing whitespace from the entire message.
 	normalized := strings.ReplaceAll(s, "\r\n", "\n")
 	normalized = strings.TrimSpace(normalized)
 
-	// Split into lines
+	// Split normalized message into lines for line-by-line processing
 	lines := strings.Split(normalized, "\n")
 	if len(lines) == 0 {
 		return Message{}, fmt.Errorf("message cannot be empty")
 	}
 
-	// Parse header (first line)
+	// === Stage 3: Header parsing ===
+	// The first line MUST be a valid Conventional Commit header.
+	// Format: <type>[(<scope>)][!]: <subject>
 	header := strings.TrimSpace(lines[0])
 	matches := MessageHeaderRegexp.FindStringSubmatch(header)
 	if matches == nil {
 		return Message{}, fmt.Errorf("invalid Conventional Commit header format: %q", header)
 	}
 
-	// Extract components from regex matches
-	typeStr := matches[1]
-	scopeStr := matches[2]
-	breakingMarker := matches[3]
-	subjectStr := matches[4]
+	// Extract components from regex capture groups (see messageHeaderPattern for group definitions)
+	typeStr := matches[1]       // Group 1: type (feat, fix, etc.)
+	scopeStr := matches[2]      // Group 2: scope (optional, without parens)
+	breakingMarker := matches[3] // Group 3: breaking change marker "!" (optional)
+	subjectStr := matches[4]    // Group 4: subject (remainder after colon)
 
-	// Parse type
+	// === Stage 4: Component validation ===
+	// Parse and validate the type string into a Type constant
 	commitType, err := ParseType(typeStr)
 	if err != nil {
 		return Message{}, fmt.Errorf("invalid type: %w", err)
 	}
 
-	// Parse scope (optional)
+	// Parse and validate scope if present (empty string means no scope)
 	var scope Scope
 	if scopeStr != "" {
 		scope, err = ParseScope(scopeStr)
@@ -176,16 +367,16 @@ func ParseMessage(s string) (Message, error) {
 		}
 	}
 
-	// Parse subject (required)
+	// Parse and validate the subject (required, must be non-empty)
 	subject, err := ParseSubject(subjectStr)
 	if err != nil {
 		return Message{}, fmt.Errorf("invalid subject: %w", err)
 	}
 
-	// Check for breaking change marker
+	// Convert breaking change marker to boolean
 	breaking := breakingMarker == "!"
 
-	// Initialize message with header components
+	// Initialize message with all header components
 	msg := Message{
 		Type:     commitType,
 		Scope:    scope,
@@ -193,13 +384,14 @@ func ParseMessage(s string) (Message, error) {
 		Breaking: breaking,
 	}
 
-	// If there's only one line, we're done
+	// If message is header-only (single line), parsing is complete
 	if len(lines) == 1 {
 		return msg, nil
 	}
 
-	// Find body and trailers
-	// Skip to first non-blank line after header
+	// === Stage 5: Content detection ===
+	// Find the first non-blank line after the header. This marks the start
+	// of either body or trailers (we'll determine which in the next stage).
 	contentStartIdx := -1
 	for i := 1; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) != "" {
@@ -209,11 +401,18 @@ func ParseMessage(s string) (Message, error) {
 	}
 
 	if contentStartIdx == -1 {
-		// No body or trailers, just blank lines
+		// No body or trailers, only blank lines after header
 		return msg, nil
 	}
 
-	// Helper function to check if a line looks like a trailer
+	// === Stage 6: Trailer detection (backwards scan algorithm) ===
+	// We use backwards scanning to distinguish trailers from body because:
+	// 1. Trailers MUST be at the end of the message
+	// 2. Trailers are separated from body by a blank line
+	// 3. Body can contain text that looks like trailers, but only end-of-message trailers count
+	//
+	// This helper checks if a line matches git trailer format: "Key: value"
+	// where Key starts with uppercase letter and contains only letters, numbers, hyphens.
 	isTrailerLine := func(line string) bool {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -221,18 +420,16 @@ func ParseMessage(s string) (Message, error) {
 		}
 		colonIdx := strings.Index(line, ":")
 		if colonIdx == -1 {
-			return false
+			return false // No colon, can't be a trailer
 		}
 		key := strings.TrimSpace(line[:colonIdx])
-		return TrailerKeyRegexp.MatchString(key)
+		return TrailerKeyRegexp.MatchString(key) // Check key against ^[A-Z][A-Za-z0-9-]*$
 	}
 
-	// Find where trailers start by scanning backwards from the end
-	// Trailers are consecutive trailer-formatted lines at the end (possibly separated by blank lines)
-	trailerStartIdx := -1
-	lastNonBlankIdx := -1
+	trailerStartIdx := -1 // Will hold the line index where trailers begin (or -1 if no trailers)
+	lastNonBlankIdx := -1 // Last non-blank line in the message
 
-	// Find last non-blank line
+	// Find the last non-blank line (working backwards from end of message)
 	for i := len(lines) - 1; i >= contentStartIdx; i-- {
 		if strings.TrimSpace(lines[i]) != "" {
 			lastNonBlankIdx = i
@@ -241,36 +438,45 @@ func ParseMessage(s string) (Message, error) {
 	}
 
 	if lastNonBlankIdx != -1 {
-		// Scan backwards to find start of trailer block
-		// Trailers must be at the end and separated from body by blank line
-		inTrailers := true
+		// Scan backwards from last non-blank line to find where trailer block starts
+		inTrailers := true // Assume we're in trailers until we find a non-trailer
 		for i := lastNonBlankIdx; i >= contentStartIdx; i-- {
 			line := strings.TrimSpace(lines[i])
+
 			if line == "" {
-				// Blank line - if we're in trailers, this separates them from body
+				// Blank line encountered while scanning backwards
 				if inTrailers && trailerStartIdx == -1 {
-					// First blank line before trailers, mark trailer start
+					// This blank line separates trailers from body
+					// Trailers start on the next line (i+1)
 					trailerStartIdx = i + 1
 					break
 				}
+				// Skip blank lines within trailer block
 				continue
 			}
+
 			if !isTrailerLine(lines[i]) {
-				// Not a trailer line
+				// Found a non-trailer line, so we're no longer in the trailer block
 				inTrailers = false
 			}
 		}
 
-		// If all non-blank lines from contentStartIdx are trailers, they're all trailers
+		// Special case: if ALL non-blank lines from contentStartIdx to end are trailers,
+		// then the entire content is trailers (no body). This handles messages like:
+		//   "fix: bug\n\nFixes: #123\nReviewed-by: Alice"
 		if inTrailers && trailerStartIdx == -1 {
 			trailerStartIdx = contentStartIdx
 		}
 	}
 
-	// Extract body (everything from contentStartIdx to before trailers)
+	// === Stage 7: Body extraction ===
+	// Extract body text from the region between header and trailers.
+	// Body is everything after the header and before the trailer block (if present).
 	var bodyEndIdx int
+
 	if trailerStartIdx != -1 && trailerStartIdx > contentStartIdx {
-		// Find last non-blank line before trailers
+		// Trailers detected: body ends where trailers start.
+		// Trim any blank lines between last body line and trailer separator.
 		bodyEndIdx = trailerStartIdx
 		for i := trailerStartIdx - 1; i >= contentStartIdx; i-- {
 			if strings.TrimSpace(lines[i]) != "" {
@@ -279,17 +485,19 @@ func ParseMessage(s string) (Message, error) {
 			}
 		}
 	} else if trailerStartIdx == -1 {
-		// No trailers, everything is body
+		// No trailers detected: everything after header is body
 		bodyEndIdx = len(lines)
 	} else {
-		// All content is trailers
+		// All content is trailers (trailerStartIdx == contentStartIdx)
 		bodyEndIdx = contentStartIdx
 	}
 
+	// Extract and parse body if present
 	if contentStartIdx < bodyEndIdx {
 		bodyLines := lines[contentStartIdx:bodyEndIdx]
 		bodyText := strings.Join(bodyLines, "\n")
-		bodyText = strings.TrimSpace(bodyText)
+		bodyText = strings.TrimSpace(bodyText) // Remove leading/trailing whitespace
+
 		if bodyText != "" {
 			body, err := ParseBody(bodyText)
 			if err != nil {
@@ -299,16 +507,20 @@ func ParseMessage(s string) (Message, error) {
 		}
 	}
 
-	// Extract trailers
+	// === Stage 8: Trailer extraction ===
+	// Parse each trailer line into a Trailer struct. Invalid trailer lines
+	// are silently skipped to allow flexibility in formatting.
 	if trailerStartIdx != -1 {
 		for i := trailerStartIdx; i < len(lines); i++ {
 			line := strings.TrimSpace(lines[i])
 			if line == "" {
-				continue
+				continue // Skip blank lines within trailer block
 			}
+
 			trailer, err := ParseTrailer(line)
 			if err != nil {
-				// Skip invalid trailer lines
+				// Skip malformed trailer lines rather than failing the entire parse.
+				// This allows messages with some invalid trailers to still be parsed.
 				continue
 			}
 			msg.Trailers = append(msg.Trailers, trailer)
@@ -318,19 +530,66 @@ func ParseMessage(s string) (Message, error) {
 	return msg, nil
 }
 
-// String returns the complete commit message as a formatted string.
+// String returns the complete commit message as a properly formatted string
+// following the Conventional Commits specification.
 //
-// This method implements the fmt.Stringer interface and the model.Loggable
-// contract. The output follows the Conventional Commits format:
-//   <type>[!][(<scope>)]: <subject>
+// This method implements the fmt.Stringer interface and satisfies the
+// model.Loggable contract's String() requirement. The output is a valid
+// Conventional Commit message that can be re-parsed by ParseMessage without
+// loss of information (round-trip compatible).
+//
+// Output Format:
+//
+//   <type>[(<scope>)][!]: <subject>
 //   [blank line]
 //   [body]
 //   [blank line]
-//   [trailers]
+//   [Trailer-Key: trailer value]
+//   [Trailer-Key: trailer value]
+//
+// Where:
+//   - Header: Always present, format is type[(scope)][!]: subject
+//   - Blank line: Only inserted if body or trailers follow
+//   - Body: Only included if Body is non-zero
+//   - Blank line: Only inserted if both body and trailers are present
+//   - Trailers: Only included if Trailers slice is non-empty
+//
+// Component Ordering:
+//
+// The breaking change marker "!" appears AFTER the scope (if present) and
+// BEFORE the colon, matching the Conventional Commits specification:
+//   - "feat!: breaking change" (no scope)
+//   - "feat(api)!: breaking change" (with scope)
+//
+// Empty Components:
+//
+// Zero-value components are omitted from the output:
+//   - If Scope.IsZero(), no "(scope)" appears
+//   - If Body.IsZero(), no body section appears
+//   - If Trailers is empty, no trailer section appears
+//
+// This ensures minimal, clean output for simple messages while supporting
+// full message structure when needed.
+//
+// Example Outputs:
+//
+//   Simple message:
+//     Input:  Message{Type: Feat, Subject: "add feature"}
+//     Output: "feat: add feature"
+//
+//   With scope and breaking:
+//     Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow"}
+//     Output: "fix(api)!: change flow"
+//
+//   Complete message:
+//     Input:  Message{Type: Feat, Scope: "api", Subject: "add endpoint",
+//                     Body: "Adds new API", Trailers: [{Key: "Fixes", Value: "#123"}]}
+//     Output: "feat(api): add endpoint\n\nAdds new API\n\nFixes: #123"
 func (m Message) String() string {
 	var parts []string
 
 	// Build header: type[(scope)][!]: subject
+	// Breaking marker comes after scope (if present) but before colon
 	header := m.Type.String()
 	if !m.Scope.IsZero() {
 		header += "(" + m.Scope.String() + ")"
@@ -341,15 +600,15 @@ func (m Message) String() string {
 	header += ": " + m.Subject.String()
 	parts = append(parts, header)
 
-	// Add body if present
+	// Add body if present, with blank line separator
 	if !m.Body.IsZero() {
-		parts = append(parts, "")
+		parts = append(parts, "")            // Blank line before body
 		parts = append(parts, m.Body.String())
 	}
 
-	// Add trailers if present
+	// Add trailers if present, with blank line separator
 	if len(m.Trailers) > 0 {
-		parts = append(parts, "")
+		parts = append(parts, "")            // Blank line before trailers
 		for _, trailer := range m.Trailers {
 			parts = append(parts, trailer.String())
 		}
@@ -358,12 +617,50 @@ func (m Message) String() string {
 	return strings.Join(parts, "\n")
 }
 
-// Redacted returns a redacted form of the Message suitable for logging.
+// Redacted returns a safe, concise representation of the Message suitable for
+// production logging, metrics, and error messages.
 //
-// This method implements the model.Loggable contract. For Message, only
-// the header is included in the redacted form (type, scope, subject), without
-// the body or trailers to keep logs concise.
+// This method implements the model.Loggable contract's Redacted() requirement.
+// For Message, only the header components are included in the redacted output:
+// type, scope (if present), breaking change marker (if present), and subject.
+// The body and trailers are intentionally excluded.
+//
+// Rationale for Exclusion:
+//
+//   - Body: May contain sensitive implementation details, internal references,
+//     or lengthy explanations that would bloat log files
+//   - Trailers: May contain developer names, email addresses (Signed-off-by),
+//     internal issue tracker URLs, or other metadata not suitable for logs
+//
+// The header alone provides sufficient context for most logging use cases:
+//   - Identifies the type of change (feat, fix, etc.)
+//   - Identifies the affected scope/component
+//   - Indicates if change is breaking
+//   - Provides concise description of what changed
+//
+// Redacted Output Format:
+//
+//   <type>[(<scope>)][!]: <subject>
+//
+// This format is identical to the first line of String() output.
+//
+// Example Outputs:
+//
+//   Input:  Message{Type: Feat, Subject: "add feature"}
+//   Output: "feat: add feature"
+//
+//   Input:  Message{Type: Fix, Scope: "api", Breaking: true, Subject: "change flow",
+//                   Body: "Long explanation...", Trailers: [...]}
+//   Output: "fix(api)!: change flow"
+//
+// Use Cases:
+//
+//   - Structured logging: log.Info("processing commit", "message", msg.Redacted())
+//   - Error messages: fmt.Errorf("failed to apply %s", msg.Redacted())
+//   - Metrics labels: metrics.RecordCommit(msg.Type.String(), msg.Redacted())
+//   - Audit logs: audit.Log("commit parsed", "header", msg.Redacted())
 func (m Message) Redacted() string {
+	// Build header only: type[(scope)][!]: subject
 	header := m.Type.String()
 	if !m.Scope.IsZero() {
 		header += "(" + m.Scope.String() + ")"
