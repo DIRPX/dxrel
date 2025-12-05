@@ -178,12 +178,34 @@ type Message struct {
 	Subject Subject `json:"subject" yaml:"subject"`
 
 	// Breaking indicates whether this commit introduces a breaking change (backwards-
-	// incompatible modification to public APIs or behavior). This field is derived
-	// from the "!" marker in the commit header.
+	// incompatible modification to public APIs or behavior). This field is set to true
+	// if ANY of the following conditions is met:
+	//
+	//   1. Header contains "!" marker: "feat!:" or "feat(scope)!:"
+	//   2. Footer contains "BREAKING CHANGE:" (with space, Conventional Commits format)
+	//   3. Footer contains "BREAKING-CHANGE:" (with hyphen, git trailer format)
+	//
+	// Per Conventional Commits specification v1.0.0, all three mechanisms are equivalent
+	// and result in Breaking=true. If multiple are present, Breaking is still just true.
+	//
+	// Format Notes:
+	//   - "BREAKING CHANGE:" (space) is the canonical Conventional Commits format but is
+	//     NOT a valid git trailer (git-interpret-trailers rejects spaces in keys)
+	//   - "BREAKING-CHANGE:" (hyphen) is git-compatible and can be parsed as a Trailer
+	//   - ParseMessage detects BOTH formats and sets Breaking=true for either
+	//   - Only "BREAKING-CHANGE:" (hyphen) will appear in the Trailers slice
+	//   - "BREAKING CHANGE:" (space) is detected but not added to Trailers
 	//
 	// When true, this commit SHOULD trigger a major version bump in semantic versioning
 	// (unless version is 0.x.y, where breaking changes only bump minor version).
-	// Breaking changes SHOULD be explained in the Body or in "BREAKING CHANGE:" trailer.
+	// Breaking changes SHOULD be explained in the Body or in the BREAKING CHANGE/BREAKING-CHANGE value.
+	//
+	// Examples:
+	//   - "feat!: remove endpoint" -> Breaking=true (from "!" marker)
+	//   - "feat: add\n\nBREAKING CHANGE: removes API" -> Breaking=true (space format)
+	//   - "feat: add\n\nBREAKING-CHANGE: removes API" -> Breaking=true (hyphen format, also in Trailers)
+	//   - "feat!: change\n\nBREAKING CHANGE: explanation" -> Breaking=true (multiple sources)
+	//   - "feat: add feature" -> Breaking=false (no markers)
 	//
 	// The json/yaml tag "breaking,omitempty" omits this field when false (zero value).
 	Breaking bool `json:"breaking,omitempty" yaml:"breaking,omitempty"`
@@ -258,10 +280,27 @@ var _ model.Model = (*Message)(nil)
 //
 //   - Type: REQUIRED, must be lowercase, must be valid Type constant
 //   - Scope: OPTIONAL, extracted from parentheses, validated by ParseScope
-//   - Breaking: OPTIONAL, "!" marker sets Breaking=true
+//   - Breaking: Set to true if EITHER "!" marker in header OR "BREAKING CHANGE:"/"BREAKING-CHANGE:" trailer present
 //   - Subject: REQUIRED, non-empty string after ":", validated by ParseSubject
 //   - Body: OPTIONAL, all non-trailer content after header
 //   - Trailers: OPTIONAL, detected by scanning backwards from end, must match trailer format
+//
+// Breaking Change Detection:
+//
+// Per Conventional Commits v1.0.0, a commit is breaking if ANY of these are true:
+//   1. Header contains "!" after type/scope: "feat!:" or "feat(scope)!:"
+//   2. Footer contains "BREAKING CHANGE:" (with space, Conventional Commits canonical format)
+//   3. Footer contains "BREAKING-CHANGE:" (with hyphen, git trailer compatible format)
+//
+// All three mechanisms are equally valid and result in Breaking=true. The "!" marker
+// is detected during header parsing (Stage 4), while footer formats are detected
+// during trailer extraction (Stage 8).
+//
+// Important: "BREAKING CHANGE:" (with space) is NOT a valid git trailer because
+// git-interpret-trailers rejects spaces in keys. However, it's the canonical format
+// in the Conventional Commits spec, so we detect it via string matching. Only
+// "BREAKING-CHANGE:" (hyphen) can be parsed as a proper Trailer and added to the
+// Trailers slice.
 //
 // Trailer Detection Algorithm:
 //
@@ -411,19 +450,28 @@ func ParseMessage(s string) (Message, error) {
 	// 2. Trailers are separated from body by a blank line
 	// 3. Body can contain text that looks like trailers, but only end-of-message trailers count
 	//
-	// This helper checks if a line matches git trailer format: "Key: value"
-	// where Key starts with uppercase letter and contains only letters, numbers, hyphens.
+	// This helper checks if a line looks like a trailer (either git format or BREAKING CHANGE).
+	// Two formats are considered trailers:
+	//   1. Git trailer format: "Key: value" where Key matches ^[A-Za-z][A-Za-z0-9-]*$
+	//   2. BREAKING CHANGE format: "BREAKING CHANGE: ..." (Conventional Commits canonical format)
 	isTrailerLine := func(line string) bool {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			return false
 		}
+
+		// Check for BREAKING CHANGE with space (Conventional Commits format)
+		if strings.HasPrefix(line, "BREAKING CHANGE:") || strings.HasPrefix(line, "BREAKING CHANGE ") {
+			return true
+		}
+
+		// Check for standard git trailer format
 		colonIdx := strings.Index(line, ":")
 		if colonIdx == -1 {
 			return false // No colon, can't be a trailer
 		}
 		key := strings.TrimSpace(line[:colonIdx])
-		return TrailerKeyRegexp.MatchString(key) // Check key against ^[A-Z][A-Za-z0-9-]*$
+		return TrailerKeyRegexp.MatchString(key) // Check key against ^[A-Za-z][A-Za-z0-9-]*$
 	}
 
 	trailerStartIdx := -1 // Will hold the line index where trailers begin (or -1 if no trailers)
@@ -507,9 +555,12 @@ func ParseMessage(s string) (Message, error) {
 		}
 	}
 
-	// === Stage 8: Trailer extraction ===
+	// === Stage 8: Trailer extraction and breaking change detection ===
 	// Parse each trailer line into a Trailer struct. Invalid trailer lines
 	// are silently skipped to allow flexibility in formatting.
+	//
+	// Additionally, detect BREAKING CHANGE markers in footer. Per Conventional Commits
+	// spec v1.0.0, both "BREAKING CHANGE:" and "BREAKING-CHANGE:" indicate breaking changes.
 	if trailerStartIdx != -1 {
 		for i := trailerStartIdx; i < len(lines); i++ {
 			line := strings.TrimSpace(lines[i])
@@ -517,6 +568,16 @@ func ParseMessage(s string) (Message, error) {
 				continue // Skip blank lines within trailer block
 			}
 
+			// Check for BREAKING CHANGE with space (Conventional Commits spec format).
+			// This format is widely used but doesn't conform to git trailer format,
+			// so it won't parse as a valid Trailer. We detect it separately.
+			if strings.HasPrefix(line, "BREAKING CHANGE:") || strings.HasPrefix(line, "BREAKING CHANGE ") {
+				msg.Breaking = true
+				// Don't try to parse as trailer since space in key is invalid
+				continue
+			}
+
+			// Try to parse as standard git trailer (e.g., "BREAKING-CHANGE:", "Fixes:", etc.)
 			trailer, err := ParseTrailer(line)
 			if err != nil {
 				// Skip malformed trailer lines rather than failing the entire parse.
@@ -524,6 +585,12 @@ func ParseMessage(s string) (Message, error) {
 				continue
 			}
 			msg.Trailers = append(msg.Trailers, trailer)
+
+			// Check for BREAKING-CHANGE trailer (git-compatible format with hyphen).
+			// This is the git-interpret-trailers compatible version of "BREAKING CHANGE".
+			if trailer.Key == "BREAKING-CHANGE" {
+				msg.Breaking = true
+			}
 		}
 	}
 

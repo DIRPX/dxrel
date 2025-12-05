@@ -123,6 +123,44 @@ func TestParseMessage(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:  "breaking_from_BREAKING_CHANGE_trailer_with_space",
+			input: "feat: add new API\n\nBREAKING CHANGE: removes old endpoint",
+			want: conventional.Message{
+				Type:     conventional.Feat,
+				Subject:  "add new API",
+				Breaking: true,
+				Body:     "",
+				Trailers: nil, // BREAKING CHANGE with space is not added to Trailers
+			},
+			wantErr: false,
+		},
+		{
+			name:  "breaking_from_BREAKING_CHANGE_trailer_with_hyphen",
+			input: "feat: add new API\n\nBREAKING-CHANGE: removes old endpoint",
+			want: conventional.Message{
+				Type:     conventional.Feat,
+				Subject:  "add new API",
+				Breaking: true,
+				Body:     "",
+				Trailers: []conventional.Trailer{
+					{Key: "BREAKING-CHANGE", Value: "removes old endpoint"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "breaking_from_both_marker_and_trailer",
+			input: "feat!: add new API\n\nBREAKING CHANGE: removes old endpoint",
+			want: conventional.Message{
+				Type:     conventional.Feat,
+				Subject:  "add new API",
+				Breaking: true,
+				Body:     "",
+				Trailers: nil,
+			},
+			wantErr: false,
+		},
+		{
 			name:    "empty_message",
 			input:   "",
 			wantErr: true,
