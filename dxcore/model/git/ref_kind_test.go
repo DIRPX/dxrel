@@ -18,7 +18,6 @@ package git_test
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"dirpx.dev/dxrel/dxcore/model/git"
