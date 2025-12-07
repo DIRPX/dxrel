@@ -555,14 +555,14 @@ func (m Message) String() string {
 //   - Audit logs: audit.Log("commit parsed", "header", msg.Redacted())
 func (m Message) Redacted() string {
 	// Build header only: type[(scope)][!]: subject
-	header := m.Type.String()
+	header := m.Type.Redacted()
 	if !m.Scope.IsZero() {
-		header += "(" + m.Scope.String() + ")"
+		header += "(" + m.Scope.Redacted() + ")"
 	}
 	if m.Breaking {
 		header += "!"
 	}
-	header += ": " + m.Subject.String()
+	header += ": " + m.Subject.Redacted()
 	return header
 }
 
