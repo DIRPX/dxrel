@@ -28,12 +28,39 @@ import (
 )
 
 const (
-	// SignatureNameMaxLength is the maximum length for a signature name.
-	// This limit prevents abuse and ensures names fit in typical display contexts.
+	// SignatureNameMaxLength is the maximum allowed length for a signature name
+	// (author or committer name), measured in bytes.
+	//
+	// This limit prevents abuse and ensures names fit in typical display contexts
+	// such as git log output, web interfaces, and terminal displays. A limit of
+	// 256 bytes provides sufficient space for most real-world names, including
+	// multi-byte UTF-8 characters for international names.
+	//
+	// While Git itself does not enforce strict name length limits, practical
+	// considerations including terminal width, log readability, and tooling
+	// compatibility make 256 bytes a sensible upper bound. Names exceeding this
+	// limit MUST be rejected during validation.
+	//
+	// Note that this is a byte limit, not a Unicode code point (rune) limit.
+	// Multi-byte UTF-8 characters in names count toward this limit based on
+	// their encoded byte length, not the number of visible characters.
 	SignatureNameMaxLength = 256
 
-	// SignatureEmailMaxLength is the maximum length for a signature email.
-	// This limit accommodates most valid email addresses while preventing abuse.
+	// SignatureEmailMaxLength is the maximum allowed length for a signature email
+	// address, measured in bytes.
+	//
+	// This limit is derived from RFC 5321, which specifies a maximum email address
+	// length of 254 characters (not including angle brackets). This limit ensures
+	// compatibility with standard email systems while preventing abuse through
+	// excessively long email addresses.
+	//
+	// Git does not strictly validate email format or length, but dxrel enforces
+	// both for data integrity. Email addresses exceeding 254 bytes MUST be rejected
+	// during validation.
+	//
+	// The email format is validated using Go's standard library mail.ParseAddress,
+	// which implements RFC 5322 parsing. This ensures that only well-formed email
+	// addresses are accepted.
 	SignatureEmailMaxLength = 254 // RFC 5321 maximum
 )
 
@@ -121,18 +148,33 @@ type Signature struct {
 // Compile-time check that Signature implements model.Model
 var _ model.Model = (*Signature)(nil)
 
-// NewSignature creates a new Signature with the given Name, Email, and When.
+// NewSignature creates a new Signature with the given Name, Email, and When,
+// validating the result before returning.
 //
-// This is a convenience constructor that creates and validates a Signature
-// in one step. If any of the components are invalid, NewSignature returns
-// a zero Signature and an error.
+// This is a convenience constructor that creates and validates a Signature in
+// one step, ensuring that all components conform to the validation rules defined
+// by Signature.Validate. If any of the components are invalid (empty name, empty
+// email, invalid email format, exceeds length limits, or zero timestamp), NewSignature
+// returns a zero Signature and an error describing the validation failure.
+//
+// This function is particularly useful when constructing Signatures from user
+// input, configuration files, or Git command output, as it guarantees that the
+// resulting Signature is valid and ready for use.
+//
+// This function is pure and has no side effects. It is safe to call concurrently
+// from multiple goroutines.
 //
 // Example usage:
 //
 //	sig, err := git.NewSignature("Jane Doe", "jane@example.com", time.Now())
 //	if err != nil {
-//	    // handle error
+//	    log.Fatal(err)
 //	}
+//	fmt.Println(sig.Name) // Output: Jane Doe
+//
+//	// Invalid email format
+//	sig, err = git.NewSignature("John", "invalid-email", time.Now())
+//	// err: "Signature Email has invalid format: ..."
 func NewSignature(name string, email string, when time.Time) (Signature, error) {
 	sig := Signature{
 		Name:  name,
@@ -201,8 +243,29 @@ func (s Signature) Redacted() string {
 		s.When.Format(time.RFC3339))
 }
 
-// redactEmail redacts an email address for safe logging.
-// Pattern: first char + *** + @ + domain
+// redactEmail redacts an email address for safe logging in production environments,
+// applying a privacy-preserving transformation that obscures the local part while
+// preserving the domain for debugging purposes.
+//
+// Redaction pattern: first_char + "***" + "@" + domain
+//
+// This function implements a consistent redaction strategy:
+//   - If email is empty, returns "[empty]"
+//   - If email has no "@" or "@" is at position 0, returns "[invalid]"
+//   - Otherwise, returns: first character of local part + "***" + "@" + domain
+//
+// Examples:
+//   - "jane@example.com" -> "j***@example.com"
+//   - "a@b.c" -> "a***@b.c"
+//   - "" -> "[empty]"
+//   - "invalid" -> "[invalid]"
+//   - "@example.com" -> "[invalid]"
+//
+// This redaction strikes a balance between privacy and debuggability. The domain
+// is preserved to help identify organizational affiliations or email providers
+// without exposing the full user identity.
+//
+// This function is pure, has no side effects, and is safe for concurrent use.
 func redactEmail(email string) string {
 	if email == "" {
 		return "[empty]"
@@ -274,31 +337,53 @@ func (s Signature) Equal(other Signature) bool {
 }
 
 // Validate checks whether this Signature satisfies all model contracts and
-// invariants.
+// invariants. This method implements the model.Validatable interface's Validate
+// requirement, enforcing data integrity for Git identity information.
 //
-// This method implements the model.Validatable contract. Validation ensures:
-//   - Name is non-empty and within length limits (1-256 characters)
-//   - Email is non-empty, follows basic format rules, and within length limits (1-254 characters)
-//   - When is non-zero (not the zero time)
+// Validate returns nil if the Signature conforms to all of the following
+// requirements:
 //
-// Email validation uses Go's standard library mail.ParseAddress which
-// validates according to RFC 5322. This catches most common errors while
-// accepting the wide variety of email formats used in Git history.
+// Name validation:
+//   - Name MUST NOT be empty (empty names are invalid for commit identities)
+//   - Name length MUST NOT exceed SignatureNameMaxLength (256 bytes)
 //
-// Zero-value Signatures (all fields zero) will fail validation.
+// Email validation:
+//   - Email MUST NOT be empty (every commit identity requires an email)
+//   - Email length MUST NOT exceed SignatureEmailMaxLength (254 bytes per RFC 5321)
+//   - Email MUST conform to RFC 5322 format (validated using mail.ParseAddress)
 //
-// Returns nil if the Signature is valid, or a descriptive error if validation fails.
+// When validation:
+//   - When MUST NOT be zero (time.IsZero() == false)
+//   - Timestamps are required for all commit identities
 //
-// Examples:
+// Email validation uses Go's standard library mail.ParseAddress, which implements
+// RFC 5322 parsing. This catches most common errors (missing @, invalid characters,
+// malformed addresses) while accepting the wide variety of email formats used in
+// Git history, including addresses without TLDs for local networks.
 //
-//	Signature{Name: "Jane", Email: "jane@example.com", When: time.Now()}.Validate()
-//	// Returns: nil (valid)
+// Zero-value Signatures (all fields zero) will fail validation, as commit identities
+// MUST have meaningful values for all three components.
 //
-//	Signature{}.Validate()
-//	// Returns: error "Signature Name must not be empty"
+// This method MUST be fast, deterministic, and idempotent. It MUST NOT mutate
+// the receiver, MUST NOT have side effects, and MUST be safe to call concurrently.
+// Validation does not perform I/O or allocate memory except when constructing
+// error messages for invalid values.
 //
-//	Signature{Name: "Jane", Email: "invalid", When: time.Now()}.Validate()
-//	// Returns: error about invalid email format
+// Callers SHOULD invoke Validate after creating Signature instances from external
+// sources (JSON, YAML, Git commands, user input) to ensure data integrity. The
+// marshal/unmarshal methods automatically call Validate to enforce this contract.
+//
+// Example:
+//
+//	sig := git.Signature{Name: "Jane", Email: "jane@example.com", When: time.Now()}
+//	if err := sig.Validate(); err != nil {
+//	    log.Error("invalid signature", "error", err)
+//	}
+//
+//	// Invalid: zero value
+//	sig = git.Signature{}
+//	err := sig.Validate()
+//	// err: "Signature Name must not be empty"
 func (s Signature) Validate() error {
 	// Validate Name
 	if s.Name == "" {
@@ -330,12 +415,14 @@ func (s Signature) Validate() error {
 	return nil
 }
 
-// MarshalJSON serializes this Signature to JSON.
+// MarshalJSON implements json.Marshaler, serializing the Signature to JSON
+// object format. This method satisfies part of the model.Serializable interface
+// requirement.
 //
-// This method implements the json.Marshaler interface and the
-// model.Serializable contract.
-//
-// The JSON format is an object with three fields:
+// MarshalJSON first validates that the Signature conforms to all constraints
+// by calling Validate. If validation fails, marshaling fails with the validation
+// error, preventing invalid data from being serialized. If validation succeeds,
+// the Signature is serialized to a JSON object with three fields:
 //
 //	{
 //	  "name": "Jane Doe",
@@ -343,11 +430,22 @@ func (s Signature) Validate() error {
 //	  "when": "2025-01-15T10:30:00Z"
 //	}
 //
-// The When field is serialized in RFC3339 format for portability and
-// precision. All three fields are always present in the output.
+// The When field is serialized in RFC3339 format (time.RFC3339) for portability,
+// precision, and timezone preservation. All three fields are always present in
+// the output, as all are required for a valid Signature.
 //
-// Before encoding, MarshalJSON calls Validate. If the Signature is invalid,
-// the validation error is returned and no JSON is produced.
+// A type alias is used internally to avoid infinite recursion during the
+// standard library json.Marshal call.
+//
+// This method MUST NOT mutate the receiver except as required by the json.Marshaler
+// interface contract. It MUST be safe to call concurrently on immutable receivers.
+//
+// Example:
+//
+//	sig := git.Signature{Name: "Jane", Email: "jane@example.com", When: time.Now()}
+//	data, _ := json.Marshal(sig)
+//	fmt.Println(string(data))
+//	// Output: {"name":"Jane","email":"jane@example.com","when":"2025-01-15T10:30:00Z"}
 func (s Signature) MarshalJSON() ([]byte, error) {
 	if err := s.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot marshal invalid %s: %w", s.TypeName(), err)
@@ -358,12 +456,11 @@ func (s Signature) MarshalJSON() ([]byte, error) {
 	return json.Marshal(signature(s))
 }
 
-// UnmarshalJSON deserializes a Signature from JSON.
+// UnmarshalJSON implements json.Unmarshaler, deserializing a JSON object into
+// a Signature value. This method satisfies part of the model.Serializable
+// interface requirement.
 //
-// This method implements the json.Unmarshaler interface and the
-// model.Serializable contract.
-//
-// The expected JSON format is an object with three fields:
+// UnmarshalJSON accepts JSON objects with the following structure:
 //
 //	{
 //	  "name": "Jane Doe",
@@ -371,9 +468,25 @@ func (s Signature) MarshalJSON() ([]byte, error) {
 //	  "when": "2025-01-15T10:30:00Z"
 //	}
 //
-// After unmarshaling, Validate is called to ensure the deserialized Signature
-// satisfies all invariants. If validation fails, the error is returned
-// and the Signature MUST NOT be used.
+// All three fields are required. The "when" field MUST be in RFC3339 format
+// (or any format accepted by Go's time.Time JSON unmarshaling).
+//
+// After unmarshaling the JSON data, Validate is called to ensure the resulting
+// Signature conforms to all constraints. If validation fails (for example, invalid
+// name, invalid email format, or zero timestamp), unmarshaling fails with an error
+// describing the validation failure. This fail-fast behavior prevents invalid
+// data from entering the system through external inputs.
+//
+// The method mutates the receiver to store the unmarshaled value. It is not
+// safe for concurrent use during unmarshaling, though the resulting Signature
+// value is safe for concurrent reads after unmarshaling completes.
+//
+// Example:
+//
+//	var sig git.Signature
+//	json.Unmarshal([]byte(`{"name":"Jane","email":"jane@example.com","when":"2025-01-15T10:30:00Z"}`), &sig)
+//	fmt.Println(sig.Name)
+//	// Output: Jane
 func (s *Signature) UnmarshalJSON(data []byte) error {
 	type signature Signature
 	if err := json.Unmarshal(data, (*signature)(s)); err != nil {
@@ -387,22 +500,36 @@ func (s *Signature) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalYAML serializes this Signature to YAML.
+// MarshalYAML implements yaml.Marshaler, serializing the Signature to YAML
+// object format. This method satisfies part of the model.Serializable interface
+// requirement.
 //
-// This method implements the yaml.Marshaler interface and the
-// model.Serializable contract.
-//
-// The YAML format is an object with three fields:
+// MarshalYAML first validates that the Signature conforms to all constraints
+// by calling Validate. If validation fails, marshaling fails with the validation
+// error, preventing invalid data from being serialized. If validation succeeds,
+// the Signature is serialized to a YAML object:
 //
 //	name: Jane Doe
 //	email: jane@example.com
 //	when: 2025-01-15T10:30:00Z
 //
-// The When field is serialized in RFC3339 format. All three fields are
-// always present in the output.
+// The When field is serialized in RFC3339 format for portability and timezone
+// preservation. All three fields are always present in the output.
 //
-// Before encoding, MarshalYAML calls Validate. If the Signature is invalid,
-// the validation error is returned and no YAML is produced.
+// A type alias is used internally to avoid infinite recursion during marshaling.
+//
+// This method MUST NOT mutate the receiver except as required by the yaml.Marshaler
+// interface contract. It MUST be safe to call concurrently on immutable receivers.
+//
+// Example:
+//
+//	sig := git.Signature{Name: "John", Email: "john@example.com", When: time.Now()}
+//	data, _ := yaml.Marshal(sig)
+//	fmt.Println(string(data))
+//	// Output:
+//	// name: John
+//	// email: john@example.com
+//	// when: 2025-01-15T10:30:00Z
 func (s Signature) MarshalYAML() (interface{}, error) {
 	if err := s.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot marshal invalid %s: %w", s.TypeName(), err)
@@ -413,20 +540,34 @@ func (s Signature) MarshalYAML() (interface{}, error) {
 	return signature(s), nil
 }
 
-// UnmarshalYAML deserializes a Signature from YAML.
+// UnmarshalYAML implements yaml.Unmarshaler, deserializing a YAML object into
+// a Signature value. This method satisfies part of the model.Serializable
+// interface requirement.
 //
-// This method implements the yaml.Unmarshaler interface and the
-// model.Serializable contract.
-//
-// The expected YAML format is an object with three fields:
+// UnmarshalYAML accepts YAML objects with the following structure:
 //
 //	name: Jane Doe
 //	email: jane@example.com
 //	when: 2025-01-15T10:30:00Z
 //
-// After unmarshaling, Validate is called to ensure the deserialized Signature
-// satisfies all invariants. If validation fails, the error is returned
-// and the Signature MUST NOT be used.
+// All three fields are required. The "when" field MUST be in RFC3339 format
+// (or any format accepted by Go's time.Time YAML unmarshaling).
+//
+// After unmarshaling the YAML data, Validate is called to ensure the resulting
+// Signature conforms to all constraints. If validation fails, unmarshaling fails
+// with an error describing the validation failure. This fail-fast behavior prevents
+// invalid configuration data from corrupting system state.
+//
+// The method mutates the receiver to store the unmarshaled value. It is not
+// safe for concurrent use during unmarshaling, though the resulting Signature
+// value is safe for concurrent reads after unmarshaling completes.
+//
+// Example:
+//
+//	var sig git.Signature
+//	yaml.Unmarshal([]byte("name: Jane\nemail: jane@example.com\nwhen: 2025-01-15T10:30:00Z"), &sig)
+//	fmt.Println(sig.Name)
+//	// Output: Jane
 func (s *Signature) UnmarshalYAML(node *yaml.Node) error {
 	type signature Signature
 	if err := node.Decode((*signature)(s)); err != nil {
