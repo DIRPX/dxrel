@@ -313,9 +313,11 @@ func (s Strategy) Equal(other any) bool {
 // well-formed before using it in planning logic.
 func (s Strategy) Validate() error {
 	if !s.Valid() {
-		return &errors.MarshalError{
-			Type:  "Strategy",
-			Value: int(s),
+		return &errors.ValidationError{
+			Type:   "Strategy",
+			Field:  "",
+			Reason: "invalid Strategy value",
+			Value:  int(s),
 		}
 	}
 	return nil

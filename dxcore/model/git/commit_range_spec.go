@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"dirpx.dev/dxrel/dxcore/errors"
 	"dirpx.dev/dxrel/dxcore/model"
 	"gopkg.in/yaml.v3"
 )
@@ -381,23 +382,39 @@ func (crs CommitRangeSpec) Equal(other any) bool {
 func (crs CommitRangeSpec) Validate() error {
 	// Zero value is invalid - at minimum need a To ref name
 	if crs.IsZero() {
-		return fmt.Errorf("CommitRangeSpec is zero (both From and To are empty)")
+		return &errors.ValidationError{
+			Type:   crs.TypeName(),
+			Field:  "",
+			Reason: "is zero (both From and To are empty)",
+		}
 	}
 
 	// To MUST be non-empty
 	if crs.To.IsZero() {
-		return fmt.Errorf("CommitRangeSpec To is empty (To ref name is required)")
+		return &errors.ValidationError{
+			Type:   crs.TypeName(),
+			Field:  "To",
+			Reason: "is empty (To ref name is required)",
+		}
 	}
 
 	// Validate To (required)
 	if err := crs.To.Validate(); err != nil {
-		return fmt.Errorf("invalid CommitRangeSpec To: %w", err)
+		return &errors.ValidationError{
+			Type:   crs.TypeName(),
+			Field:  "To",
+			Reason: fmt.Sprintf("invalid: %v", err),
+		}
 	}
 
 	// Validate From if non-empty (empty From is allowed = from beginning)
 	if !crs.From.IsZero() {
 		if err := crs.From.Validate(); err != nil {
-			return fmt.Errorf("invalid CommitRangeSpec From: %w", err)
+			return &errors.ValidationError{
+				Type:   crs.TypeName(),
+				Field:  "From",
+				Reason: fmt.Sprintf("invalid: %v", err),
+			}
 		}
 	}
 
@@ -481,14 +498,22 @@ func (crs *CommitRangeSpec) UnmarshalJSON(data []byte) error {
 	var temp commitRangeSpecJSON
 
 	if err := json.Unmarshal(data, &temp); err != nil {
-		return fmt.Errorf("failed to unmarshal CommitRangeSpec: %w", err)
+		return &errors.UnmarshalError{
+			Type:   crs.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	*crs = CommitRangeSpec(temp)
 
 	// Validate after unmarshaling
 	if err := crs.Validate(); err != nil {
-		return fmt.Errorf("invalid CommitRangeSpec after unmarshal: %w", err)
+		return &errors.UnmarshalError{
+			Type:   crs.TypeName(),
+			Data:   data,
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil
@@ -568,14 +593,22 @@ func (crs *CommitRangeSpec) UnmarshalYAML(node *yaml.Node) error {
 	var temp commitRangeSpecYAML
 
 	if err := node.Decode(&temp); err != nil {
-		return fmt.Errorf("failed to unmarshal CommitRangeSpec: %w", err)
+		return &errors.UnmarshalError{
+			Type:   crs.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	*crs = CommitRangeSpec(temp)
 
 	// Validate after unmarshaling
 	if err := crs.Validate(); err != nil {
-		return fmt.Errorf("invalid CommitRangeSpec after unmarshal: %w", err)
+		return &errors.UnmarshalError{
+			Type:   crs.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil

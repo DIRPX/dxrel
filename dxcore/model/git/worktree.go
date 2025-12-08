@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"dirpx.dev/dxrel/dxcore/errors"
 	"dirpx.dev/dxrel/dxcore/model"
 	"gopkg.in/yaml.v3"
 )
@@ -508,7 +509,11 @@ func (ws *WorktreeStatus) UnmarshalJSON(data []byte) error {
 	var temp worktreeStatusJSON
 
 	if err := json.Unmarshal(data, &temp); err != nil {
-		return fmt.Errorf("failed to unmarshal WorktreeStatus: %w", err)
+		return &errors.UnmarshalError{
+			Type:   ws.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	*ws = WorktreeStatus(temp)
@@ -572,7 +577,11 @@ func (ws *WorktreeStatus) UnmarshalYAML(node *yaml.Node) error {
 	var temp worktreeStatusYAML
 
 	if err := node.Decode(&temp); err != nil {
-		return fmt.Errorf("failed to unmarshal WorktreeStatus: %w", err)
+		return &errors.UnmarshalError{
+			Type:   ws.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	*ws = WorktreeStatus(temp)

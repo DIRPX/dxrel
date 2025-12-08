@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"dirpx.dev/dxrel/dxcore/errors"
 	"dirpx.dev/dxrel/dxcore/model"
 	"gopkg.in/yaml.v3"
 )
@@ -518,65 +519,122 @@ func (c Commit) Equal(other Commit) bool {
 func (c Commit) Validate() error {
 	// Validate Hash
 	if c.Hash.IsZero() {
-		return fmt.Errorf("%s Hash must not be empty", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Hash",
+			Reason: "must not be empty",
+		}
 	}
 	if err := c.Hash.Validate(); err != nil {
-		return fmt.Errorf("invalid %s Hash: %w", c.TypeName(), err)
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Hash",
+			Reason: fmt.Sprintf("invalid: %v", err),
+		}
 	}
 
 	// Validate Parents
 	if len(c.Parents) > CommitParentsMaxCount {
-		return fmt.Errorf("%s has too many parents: %d (maximum %d)",
-			c.TypeName(), len(c.Parents), CommitParentsMaxCount)
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Parents",
+			Reason: fmt.Sprintf("has too many parents: %d (maximum %d)", len(c.Parents), CommitParentsMaxCount),
+		}
 	}
 	for i, parent := range c.Parents {
 		if parent.IsZero() {
-			return fmt.Errorf("%s Parents[%d] must not be empty", c.TypeName(), i)
+			return &errors.ValidationError{
+				Type:   c.TypeName(),
+				Field:  fmt.Sprintf("Parents[%d]", i),
+				Reason: "must not be empty",
+			}
 		}
 		if err := parent.Validate(); err != nil {
-			return fmt.Errorf("invalid %s Parents[%d]: %w", c.TypeName(), i, err)
+			return &errors.ValidationError{
+				Type:   c.TypeName(),
+				Field:  fmt.Sprintf("Parents[%d]", i),
+				Reason: fmt.Sprintf("invalid: %v", err),
+			}
 		}
 	}
 
 	// Validate Author
 	if c.Author.IsZero() {
-		return fmt.Errorf("%s Author must not be empty", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Author",
+			Reason: "must not be empty",
+		}
 	}
 	if err := c.Author.Validate(); err != nil {
-		return fmt.Errorf("invalid %s Author: %w", c.TypeName(), err)
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Author",
+			Reason: fmt.Sprintf("invalid: %v", err),
+		}
 	}
 
 	// Validate Committer
 	if c.Committer.IsZero() {
-		return fmt.Errorf("%s Committer must not be empty", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Committer",
+			Reason: "must not be empty",
+		}
 	}
 	if err := c.Committer.Validate(); err != nil {
-		return fmt.Errorf("invalid %s Committer: %w", c.TypeName(), err)
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Committer",
+			Reason: fmt.Sprintf("invalid: %v", err),
+		}
 	}
 
 	// Validate Message
 	if c.Message == "" {
-		return fmt.Errorf("%s Message must not be empty", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Message",
+			Reason: "must not be empty",
+		}
 	}
 	if len(c.Message) > CommitMessageMaxLen {
-		return fmt.Errorf("%s Message exceeds maximum length of %d bytes (got %d)",
-			c.TypeName(), CommitMessageMaxLen, len(c.Message))
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Message",
+			Reason: fmt.Sprintf("exceeds maximum length of %d bytes (got %d)", CommitMessageMaxLen, len(c.Message)),
+		}
 	}
 	// Check for CRLF or lone CR (should be normalized to LF)
 	if strings.Contains(c.Message, "\r\n") || strings.Contains(c.Message, "\r") {
-		return fmt.Errorf("%s Message contains CRLF or CR line endings (must use LF)", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Message",
+			Reason: "contains CRLF or CR line endings (must use LF)",
+		}
 	}
 
 	// Validate Summary
 	if c.Summary == "" {
-		return fmt.Errorf("%s Summary must not be empty", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Summary",
+			Reason: "must not be empty",
+		}
 	}
 	if len(c.Summary) > CommitSummaryMaxLen {
-		return fmt.Errorf("%s Summary exceeds maximum length of %d bytes (got %d)",
-			c.TypeName(), CommitSummaryMaxLen, len(c.Summary))
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Summary",
+			Reason: fmt.Sprintf("exceeds maximum length of %d bytes (got %d)", CommitSummaryMaxLen, len(c.Summary)),
+		}
 	}
 	if strings.Contains(c.Summary, "\n") || strings.Contains(c.Summary, "\r") {
-		return fmt.Errorf("%s Summary must not contain newlines", c.TypeName())
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Summary",
+			Reason: "must not contain newlines",
+		}
 	}
 
 	// Validate Summary matches first line of Message
@@ -584,19 +642,29 @@ func (c Commit) Validate() error {
 	if len(lines) > 0 {
 		expectedSummary := strings.TrimSpace(lines[0])
 		if c.Summary != expectedSummary {
-			return fmt.Errorf("%s Summary %q does not match first line of Message %q",
-				c.TypeName(), c.Summary, expectedSummary)
+			return &errors.ValidationError{
+				Type:   c.TypeName(),
+				Field:  "Summary",
+				Reason: fmt.Sprintf("%q does not match first line of Message %q", c.Summary, expectedSummary),
+			}
 		}
 	}
 
 	// Validate Changes
 	if len(c.Changes) > CommitChangesMaxCount {
-		return fmt.Errorf("%s has too many changes: %d (maximum %d)",
-			c.TypeName(), len(c.Changes), CommitChangesMaxCount)
+		return &errors.ValidationError{
+			Type:   c.TypeName(),
+			Field:  "Changes",
+			Reason: fmt.Sprintf("has too many changes: %d (maximum %d)", len(c.Changes), CommitChangesMaxCount),
+		}
 	}
 	for i, change := range c.Changes {
 		if err := change.Validate(); err != nil {
-			return fmt.Errorf("invalid %s Changes[%d]: %w", c.TypeName(), i, err)
+			return &errors.ValidationError{
+				Type:   c.TypeName(),
+				Field:  fmt.Sprintf("Changes[%d]", i),
+				Reason: fmt.Sprintf("invalid: %v", err),
+			}
 		}
 	}
 
@@ -656,11 +724,19 @@ func (c Commit) MarshalJSON() ([]byte, error) {
 func (c *Commit) UnmarshalJSON(data []byte) error {
 	type commit Commit
 	if err := json.Unmarshal(data, (*commit)(c)); err != nil {
-		return fmt.Errorf("cannot unmarshal JSON into %s: %w", c.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   c.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	if err := c.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", c.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   c.TypeName(),
+			Data:   data,
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil
@@ -718,11 +794,19 @@ func (c Commit) MarshalYAML() (interface{}, error) {
 func (c *Commit) UnmarshalYAML(node *yaml.Node) error {
 	type commit Commit
 	if err := node.Decode((*commit)(c)); err != nil {
-		return fmt.Errorf("cannot unmarshal YAML into %s: %w", c.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   c.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	if err := c.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", c.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   c.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"dirpx.dev/dxrel/dxcore/errors"
 	"dirpx.dev/dxrel/dxcore/model"
 	"gopkg.in/yaml.v3"
 )
@@ -387,29 +388,51 @@ func (s Signature) Equal(other Signature) bool {
 func (s Signature) Validate() error {
 	// Validate Name
 	if s.Name == "" {
-		return fmt.Errorf("%s Name must not be empty", s.TypeName())
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "Name",
+			Reason: "must not be empty",
+		}
 	}
 	if len(s.Name) > SignatureNameMaxLength {
-		return fmt.Errorf("%s Name exceeds maximum length of %d characters (got %d)",
-			s.TypeName(), SignatureNameMaxLength, len(s.Name))
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "Name",
+			Reason: fmt.Sprintf("exceeds maximum length of %d characters (got %d)", SignatureNameMaxLength, len(s.Name)),
+		}
 	}
 
 	// Validate Email
 	if s.Email == "" {
-		return fmt.Errorf("%s Email must not be empty", s.TypeName())
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "Email",
+			Reason: "must not be empty",
+		}
 	}
 	if len(s.Email) > SignatureEmailMaxLength {
-		return fmt.Errorf("%s Email exceeds maximum length of %d characters (got %d)",
-			s.TypeName(), SignatureEmailMaxLength, len(s.Email))
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "Email",
+			Reason: fmt.Sprintf("exceeds maximum length of %d characters (got %d)", SignatureEmailMaxLength, len(s.Email)),
+		}
 	}
 	// Use standard library to validate email format per RFC 5322
 	if _, err := mail.ParseAddress(s.Email); err != nil {
-		return fmt.Errorf("%s Email has invalid format: %q (%w)", s.TypeName(), s.Email, err)
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "Email",
+			Reason: fmt.Sprintf("has invalid format: %q (%v)", s.Email, err),
+		}
 	}
 
 	// Validate When
 	if s.When.IsZero() {
-		return fmt.Errorf("%s When must not be zero", s.TypeName())
+		return &errors.ValidationError{
+			Type:   s.TypeName(),
+			Field:  "When",
+			Reason: "must not be zero",
+		}
 	}
 
 	return nil
@@ -490,11 +513,19 @@ func (s Signature) MarshalJSON() ([]byte, error) {
 func (s *Signature) UnmarshalJSON(data []byte) error {
 	type signature Signature
 	if err := json.Unmarshal(data, (*signature)(s)); err != nil {
-		return fmt.Errorf("cannot unmarshal JSON into %s: %w", s.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   s.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	if err := s.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", s.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   s.TypeName(),
+			Data:   data,
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil
@@ -571,11 +602,19 @@ func (s Signature) MarshalYAML() (interface{}, error) {
 func (s *Signature) UnmarshalYAML(node *yaml.Node) error {
 	type signature Signature
 	if err := node.Decode((*signature)(s)); err != nil {
-		return fmt.Errorf("cannot unmarshal YAML into %s: %w", s.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   s.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	if err := s.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", s.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   s.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil

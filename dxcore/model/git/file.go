@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"dirpx.dev/dxrel/dxcore/errors"
 	"dirpx.dev/dxrel/dxcore/model"
 	"gopkg.in/yaml.v3"
 )
@@ -374,7 +375,12 @@ func (k FileChangeKind) Validate() error {
 		FileChangeDeleted, FileChangeRenamed, FileChangeCopied, FileChangeType:
 		return nil
 	default:
-		return fmt.Errorf("invalid %s: %d", k.TypeName(), uint8(k))
+		return &errors.ValidationError{
+			Type:   k.TypeName(),
+			Field:  "",
+			Reason: fmt.Sprintf("invalid value: %d", uint8(k)),
+			Value:  uint8(k),
+		}
 	}
 }
 
@@ -402,7 +408,10 @@ func (k FileChangeKind) Validate() error {
 //	fmt.Println(string(data)) // Output: "added"
 func (k FileChangeKind) MarshalJSON() ([]byte, error) {
 	if err := k.Validate(); err != nil {
-		return nil, fmt.Errorf("cannot marshal invalid %s: %w", k.TypeName(), err)
+		return nil, &errors.MarshalError{
+			Type:  k.TypeName(),
+			Value: int(k),
+		}
 	}
 	return json.Marshal(k.String())
 }
@@ -434,12 +443,20 @@ func (k FileChangeKind) MarshalJSON() ([]byte, error) {
 func (k *FileChangeKind) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
-		return fmt.Errorf("cannot unmarshal JSON into %s: %w", k.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   k.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	parsed, err := ParseFileChangeKind(s)
 	if err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", k.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   k.TypeName(),
+			Data:   data,
+			Reason: fmt.Sprintf("unknown value: %q", s),
+		}
 	}
 
 	*k = parsed
@@ -469,7 +486,10 @@ func (k *FileChangeKind) UnmarshalJSON(data []byte) error {
 //	fmt.Println(string(data)) // Output: "renamed\n"
 func (k FileChangeKind) MarshalYAML() (interface{}, error) {
 	if err := k.Validate(); err != nil {
-		return nil, fmt.Errorf("cannot marshal invalid %s: %w", k.TypeName(), err)
+		return nil, &errors.MarshalError{
+			Type:  k.TypeName(),
+			Value: int(k),
+		}
 	}
 	return k.String(), nil
 }
@@ -499,12 +519,20 @@ func (k FileChangeKind) MarshalYAML() (interface{}, error) {
 func (k *FileChangeKind) UnmarshalYAML(node *yaml.Node) error {
 	var s string
 	if err := node.Decode(&s); err != nil {
-		return fmt.Errorf("cannot unmarshal YAML into %s: %w", k.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   k.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	parsed, err := ParseFileChangeKind(s)
 	if err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", k.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   k.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: fmt.Sprintf("unknown value: %q", s),
+		}
 	}
 
 	*k = parsed
@@ -820,38 +848,61 @@ func (fc FileChange) Equal(other FileChange) bool {
 func (fc FileChange) Validate() error {
 	// Validate Path
 	if fc.Path == "" {
-		return fmt.Errorf("%s Path must not be empty", fc.TypeName())
+		return &errors.ValidationError{
+			Type:   fc.TypeName(),
+			Field:  "Path",
+			Reason: "must not be empty",
+		}
 	}
 	if len(fc.Path) > FilePathMaxLength {
-		return fmt.Errorf("%s Path exceeds maximum length of %d characters (got %d)",
-			fc.TypeName(), FilePathMaxLength, len(fc.Path))
+		return &errors.ValidationError{
+			Type:   fc.TypeName(),
+			Field:  "Path",
+			Reason: fmt.Sprintf("exceeds maximum length of %d characters (got %d)", FilePathMaxLength, len(fc.Path)),
+		}
 	}
 	if strings.HasPrefix(fc.Path, "/") {
-		return fmt.Errorf("%s Path must be relative (no leading slash): %q",
-			fc.TypeName(), fc.Path)
+		return &errors.ValidationError{
+			Type:   fc.TypeName(),
+			Field:  "Path",
+			Reason: fmt.Sprintf("must be relative (no leading slash): %q", fc.Path),
+		}
 	}
 
 	// Validate Kind
 	if err := fc.Kind.Validate(); err != nil {
-		return fmt.Errorf("invalid %s Kind: %w", fc.TypeName(), err)
+		return &errors.ValidationError{
+			Type:   fc.TypeName(),
+			Field:  "Kind",
+			Reason: fmt.Sprintf("invalid: %v", err),
+		}
 	}
 
 	// Validate OldPath consistency
 	if fc.OldPath != "" {
 		// OldPath should only be set for renames and copies
 		if fc.Kind != FileChangeRenamed && fc.Kind != FileChangeCopied {
-			return fmt.Errorf("%s OldPath should only be set for renamed/copied files (got kind=%s)",
-				fc.TypeName(), fc.Kind.String())
+			return &errors.ValidationError{
+				Type:   fc.TypeName(),
+				Field:  "OldPath",
+				Reason: fmt.Sprintf("should only be set for renamed/copied files (got kind=%s)", fc.Kind.String()),
+			}
 		}
 
 		// Validate OldPath format
 		if len(fc.OldPath) > FilePathMaxLength {
-			return fmt.Errorf("%s OldPath exceeds maximum length of %d characters (got %d)",
-				fc.TypeName(), FilePathMaxLength, len(fc.OldPath))
+			return &errors.ValidationError{
+				Type:   fc.TypeName(),
+				Field:  "OldPath",
+				Reason: fmt.Sprintf("exceeds maximum length of %d characters (got %d)", FilePathMaxLength, len(fc.OldPath)),
+			}
 		}
 		if strings.HasPrefix(fc.OldPath, "/") {
-			return fmt.Errorf("%s OldPath must be relative (no leading slash): %q",
-				fc.TypeName(), fc.OldPath)
+			return &errors.ValidationError{
+				Type:   fc.TypeName(),
+				Field:  "OldPath",
+				Reason: fmt.Sprintf("must be relative (no leading slash): %q", fc.OldPath),
+			}
 		}
 	} else {
 		// Warn if OldPath is missing for rename/copy (but don't fail - might be partial data)
@@ -933,11 +984,19 @@ func (fc FileChange) MarshalJSON() ([]byte, error) {
 func (fc *FileChange) UnmarshalJSON(data []byte) error {
 	type fileChange FileChange
 	if err := json.Unmarshal(data, (*fileChange)(fc)); err != nil {
-		return fmt.Errorf("cannot unmarshal JSON into %s: %w", fc.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   fc.TypeName(),
+			Data:   data,
+			Reason: err.Error(),
+		}
 	}
 
 	if err := fc.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", fc.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   fc.TypeName(),
+			Data:   data,
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil
@@ -1010,11 +1069,19 @@ func (fc FileChange) MarshalYAML() (interface{}, error) {
 func (fc *FileChange) UnmarshalYAML(node *yaml.Node) error {
 	type fileChange FileChange
 	if err := node.Decode((*fileChange)(fc)); err != nil {
-		return fmt.Errorf("cannot unmarshal YAML into %s: %w", fc.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   fc.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: err.Error(),
+		}
 	}
 
 	if err := fc.Validate(); err != nil {
-		return fmt.Errorf("unmarshaled %s is invalid: %w", fc.TypeName(), err)
+		return &errors.UnmarshalError{
+			Type:   fc.TypeName(),
+			Data:   []byte(fmt.Sprintf("%v", node)),
+			Reason: fmt.Sprintf("validation failed: %v", err),
+		}
 	}
 
 	return nil
