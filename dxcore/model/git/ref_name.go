@@ -142,7 +142,16 @@ type RefName string
 //	ref, err := git.ParseRefName("invalid\x00ref")
 //	// ref = "", err = error
 func ParseRefName(s string) (RefName, error) {
-	// Normalize: trim whitespace
+	// Check for control characters (including \n, \t, etc.) before normalization
+	// This ensures strings like "main\n" are rejected even though TrimSpace would clean them
+	// We only allow regular spaces (U+0020) for trimming, not tabs or newlines
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return "", fmt.Errorf("invalid RefName: input contains control character (U+%04X)", r)
+		}
+	}
+
+	// Normalize: trim whitespace (only regular spaces remain after control char check)
 	normalized := strings.TrimSpace(s)
 
 	// Empty string is valid (zero value)
