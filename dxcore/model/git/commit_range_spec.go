@@ -36,8 +36,8 @@ import (
 // fully-resolved CommitRange.
 //
 // The relationship between CommitRangeSpec and CommitRange is:
-//   - CommitRangeSpec: User input with symbolic names → "what the user wants"
-//   - CommitRange: Resolved with concrete hashes → "what Git will process"
+//   - CommitRangeSpec: User input with symbolic names -> "what the user wants"
+//   - CommitRange: Resolved with concrete hashes -> "what Git will process"
 //
 // CommitRangeSpec follows the same Git range semantics as CommitRange:
 //   - From is the exclusive lower bound (symbolic name)
@@ -100,10 +100,10 @@ type CommitRangeSpec struct {
 	// resolved, this becomes a zero Ref in the resulting CommitRange.
 	//
 	// Examples:
-	//   - From = "v1.0.0"     → Will resolve to tag v1.0.0's commit hash
-	//   - From = "main"       → Will resolve to main branch's current commit
-	//   - From = ""           → No resolution needed, means "from beginning"
-	//   - From = "HEAD~10"    → Will resolve to 10 commits before HEAD
+	//   - From = "v1.0.0"     -> Will resolve to tag v1.0.0's commit hash
+	//   - From = "main"       -> Will resolve to main branch's current commit
+	//   - From = ""           -> No resolution needed, means "from beginning"
+	//   - From = "HEAD~10"    -> Will resolve to 10 commits before HEAD
 	From RefName `json:"from" yaml:"from"`
 
 	// To is the symbolic name of the inclusive upper bound.
@@ -114,10 +114,10 @@ type CommitRangeSpec struct {
 	// commit hash through Git commands.
 	//
 	// Examples:
-	//   - To = "HEAD"         → Will resolve to current HEAD commit
-	//   - To = "v2.0.0"       → Will resolve to tag v2.0.0's commit hash
-	//   - To = "develop"      → Will resolve to develop branch's current commit
-	//   - To = "abc123..."    → Direct hash, will validate and use as-is
+	//   - To = "HEAD"         -> Will resolve to current HEAD commit
+	//   - To = "v2.0.0"       -> Will resolve to tag v2.0.0's commit hash
+	//   - To = "develop"      -> Will resolve to develop branch's current commit
+	//   - To = "abc123..."    -> Direct hash, will validate and use as-is
 	To RefName `json:"to" yaml:"to"`
 }
 

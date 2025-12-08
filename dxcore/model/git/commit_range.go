@@ -106,11 +106,11 @@ type CommitRange struct {
 	//
 	// Examples:
 	//   - From.Name = "v1.2.3", From.Kind = RefKindTag, From.Hash = <tag commit hash>
-	//     → Range excludes v1.2.3 and all its ancestors
+	//     -> Range excludes v1.2.3 and all its ancestors
 	//   - From.Name = "", From.Kind = RefKindUnknown, From.Hash = ""
-	//     → Range includes all history (no lower bound)
+	//     -> Range includes all history (no lower bound)
 	//   - From.Name = "abc123...", From.Kind = RefKindHash, From.Hash = "abc123..."
-	//     → Range excludes specific commit and its ancestors
+	//     -> Range excludes specific commit and its ancestors
 	From Ref `json:"from" yaml:"from"`
 
 	// To is the inclusive upper bound of the commit range.
@@ -131,11 +131,11 @@ type CommitRange struct {
 	//
 	// Examples:
 	//   - To.Name = "HEAD", To.Kind = RefKindBranch, To.Hash = <current HEAD hash>
-	//     → Range includes up to current HEAD
+	//     -> Range includes up to current HEAD
 	//   - To.Name = "main", To.Kind = RefKindBranch, To.Hash = <refs/heads/main hash>
-	//     → Range includes up to main branch tip
+	//     -> Range includes up to main branch tip
 	//   - To.Name = "v2.0.0", To.Kind = RefKindTag, To.Hash = <tag commit hash>
-	//     → Range includes up to v2.0.0 release
+	//     -> Range includes up to v2.0.0 release
 	To Ref `json:"to" yaml:"to"`
 }
 

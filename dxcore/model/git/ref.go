@@ -83,10 +83,10 @@ type Ref struct {
 	// tag, lightweight tag, or direct commit hash.
 	//
 	// The Kind is typically determined by examining the Name prefix:
-	//   - refs/heads/* → RefKindBranch
-	//   - refs/tags/* → RefKindTag
-	//   - refs/remotes/* → RefKindRemoteBranch
-	//   - 40 or 64 hex chars → RefKindHash
+	//   - refs/heads/* -> RefKindBranch
+	//   - refs/tags/* -> RefKindTag
+	//   - refs/remotes/* -> RefKindRemoteBranch
+	//   - 40 or 64 hex chars -> RefKindHash
 	Kind RefKind
 
 	// Hash is the resolved object id this ref points to.
